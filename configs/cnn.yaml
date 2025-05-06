@@ -1,0 +1,19 @@
+# CNN model configuration for baleen whale benchmark
+# This extends the default configuration
+
+defaults:
+  - default
+
+model:
+  name: "cnn"
+  params:
+    save_path: "${oc.env:MODEL_DIR,models}"
+    model_name: "cnn_model"
+    batch_size: 32
+    learning_rate: 0.001
+    loss_function: "sparse_categorical_crossentropy"
+    class_weights: "balanced"
+    epochs: 100
+    early_stop: 10
+    monitoring_metric: "val_loss"
+    monitoring_direction: "min"

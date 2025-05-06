@@ -1,0 +1,39 @@
+# Default configuration for baleen whale benchmark
+
+data:
+  dir: "${oc.env:DATA_DIR,data}"
+  categories: ["Blue", "Fin", "Humpback", "Noise"]
+  join_cat: {}  # No category joining
+  locations: ["Location1", "Location2"]
+  use_corrected: true
+  samples_per_class: 250
+  noise_ratio: 0.5
+  validation_split: 0.3
+  test_split: 0.2
+
+model:
+  name: "cnn"
+  params:
+    save_path: "${oc.env:MODEL_DIR,models}"
+    model_name: "cnn_model"
+    batch_size: 32
+    learning_rate: 0.001
+    loss_function: "sparse_categorical_crossentropy"
+    class_weights: "balanced"
+
+training:
+  max_epochs: 100
+  early_stopping:
+    patience: 10
+    monitor: "val_loss"
+    mode: "min"
+  checkpoint:
+    monitor: "val_loss"
+    mode: "min"
+    save_best_only: true
+  
+logging:
+  log_dir: "${oc.env:LOG_DIR,logs}"
+  csv: true
+  wandb: false
+  wandb_project: "whale_benchmark"

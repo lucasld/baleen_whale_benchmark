@@ -1,0 +1,22 @@
+{
+  "_ABOUT": "This file maps annotation tags to standard tags expected by the CNN model, regardless of site. Special values: '_IGNORE' = completely ignore this tag, 'Noise' = treat as noise class.",
+  "_NOTES": "The keys are the tags found in annotation files, the values are what they should be mapped to.",
+  
+  "BpDwnswp": "Dswp",
+  "Bp20Plus": "20Plus",
+  "Bp20Hz": "20Hz",
+  "Bp.20Hz": "20Hz",
+  "BmAnt-Z": "Z",
+  "Bm.Ant-Z": "Z",
+  "BmAnt-B": "B",
+  "Bm.Ant-B": "B",
+  "BmAnt-A": "A",
+  "Bm.Ant-A": "A",
+  "BmD": "D",
+  "Bm.D": "D",
+  "unid": "Noise",
+  "Unidentified.calls": "Noise",
+  "humpback": "_IGNORE",
+  "minke": "_IGNORE",
+  "BpHigherCall": "_IGNORE"
+} 

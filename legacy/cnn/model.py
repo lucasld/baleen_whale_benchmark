@@ -129,7 +129,7 @@ class Model:
             initial_learning_rate=learning_rate,
             decay_steps=(len(x_train) / batch_size) * 10,
             decay_rate=0.5)
-        opt = tf.keras.optimizers.legacy.Adam(learning_rate=lr_schedule)
+        opt = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
         # metrics.NoiseMisclassificationRate(noise_class_name='Noise', classes_names=categories, name='noise_misclass'),
         # metrics.CallAvgTPR(noise_class_name='Noise', classes_names=categories, name='call_tpr')
 
@@ -138,7 +138,7 @@ class Model:
         self.model.compile(loss=loss_function,
                            optimizer=opt,
                            metrics=self.metrics,
-                           jit_compile=True)
+                           )
 
         model_save_filename = self.log_path.joinpath('checkpoints')
 

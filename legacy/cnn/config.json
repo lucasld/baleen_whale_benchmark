@@ -1,6 +1,6 @@
 {
-  "DATA_DIR": "/mnt/fscompute_shared/Miller_AntarcticData/Specs_sequenced2",
-  "OUTPUT_DIR": "/mnt/fscompute_shared/Miller_AntarcticData/CNN+Noise_Results/",
+  "DATA_DIR": "outputs/spectrograms",
+  "OUTPUT_DIR": "outputs/cnn_results",
   "LOCATIONS": [
     "BallenyIslands2015",
     "casey2014",
@@ -39,7 +39,7 @@
       "Dswp"
     ]
   },
-  "SAMPLES_PER_CLASS": 30000,
+  "SAMPLES_PER_CLASS": 300,
   "NOISE_RATIO": [0.25],
   "NOISE_RATIO_TEST": ["all"],
   "USE_CORRECTED_DATASET": false,
