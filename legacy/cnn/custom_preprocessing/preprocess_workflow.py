@@ -71,21 +71,21 @@ def main():
     # Otherwise we'll use the default mapping file in the same directory as process_all_sites.py
 
     # --- Stage 1: Process Annotations and Run Koogu --- 
-    stage1_success = True
+    failed_sites = []
     if not args.skip_koogu:
         print("\n=== Stage 1: Processing Annotations and Running Koogu ===")
         # Note: process_site within run_all_sites expects base dirs for annotations and koogu output
         # It will create site-specific subdirectories within them.
-        stage1_success = run_all_sites_processing(
+        failed_sites = run_all_sites_processing(
             raw_data_dir=raw_data_dir,
             annotations_output_dir=annotations_dir, 
             koogu_output_dir=koogu_output_dir,
             config_path=config_path,
             tag_mapping_path=tag_mapping_path
         )
-        if not stage1_success:
-            print("\nError: Stage 1 (Annotation/Koogu Processing) failed. Exiting workflow.")
-            sys.exit(1)
+        if failed_sites:
+            print(f"\nWarning: The following sites failed processing: {', '.join(failed_sites)}")
+            print("Continuing with spectrograms generation for successful sites...")
         print("=== Stage 1 Completed ===")
     else:
         print("\n=== Skipping Stage 1 (Annotation/Koogu Processing) as requested ===")
@@ -106,7 +106,9 @@ def main():
     print("=== Stage 2 Completed ===")
 
     # --- Workflow Summary --- 
-    print("\n--- Preprocessing Workflow Completed Successfully ---")
+    print("\n--- Preprocessing Workflow Completed ---")
+    if failed_sites:
+        print(f"Warning: {len(failed_sites)} sites failed during Stage 1: {', '.join(failed_sites)}")
     if not args.skip_koogu:
         print(f"Annotations saved in subdirectories under: {annotations_dir}")
         print(f"Koogu output saved in subdirectories under: {koogu_output_dir}")

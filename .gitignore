@@ -8,3 +8,4 @@ __pycache__/
 *.md
 .DS_Store
 legacy/cnn/outputs/
+legacy/cnn/slurm/outputs/

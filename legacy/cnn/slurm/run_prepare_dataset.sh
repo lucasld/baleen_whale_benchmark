@@ -5,9 +5,9 @@
 #SBATCH --mem=4G
 #SBATCH -c 2
 #SBATCH -p klab-cpu
-#SBATCH --job-name=extract_tags
-#SBATCH --error=slurm/outputs/logs/extract_tags_%j.err
-#SBATCH --output=slurm/outputs/logs/extract_tags_%j.out
+#SBATCH --job-name=prepare_dataset
+#SBATCH --error=slurm/outputs/logs/prepare_dataset_%j.err
+#SBATCH --output=slurm/outputs/logs/prepare_dataset_%j.out
 
 # Load required modules
 spack load miniconda3
@@ -27,8 +27,8 @@ export PYTHONPATH="${BASE_DIR}/custom_preprocessing:${PYTHONPATH}"
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
-# Run tag extraction script
+# Run dataset preparation script
 cd "$BASE_DIR"
-python custom_preprocessing/extract_tags.py \
+python custom_preprocessing/prepare_dataset.py \
   --raw_data "$RAW_DATA_PATH" \
   --output "$OUTPUT_DIR" 

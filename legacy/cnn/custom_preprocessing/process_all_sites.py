@@ -255,18 +255,18 @@ def run_all_sites_processing(raw_data_dir, annotations_output_dir, koogu_output_
     # Find potential site directories
     if not os.path.isdir(raw_data_dir):
         print(f"Error: Raw data directory not found: {raw_data_dir}")
-        return False
-        
+        return list(os.listdir('.'))  # Return all as failed if directory doesn't exist
+
     all_subdirs = [d for d in os.listdir(raw_data_dir) if os.path.isdir(os.path.join(raw_data_dir, d))]
     site_subdirs = [d for d in all_subdirs if not d[0].isdigit()] # Filter out dirs starting with a digit
 
     if not site_subdirs:
         print(f"No site directories found in raw data path: {raw_data_dir}")
-        return False
+        return []  # No sites to process, so none failed
 
     print(f"Found potential sites: {', '.join(site_subdirs)}")
 
-    all_sites_successful = True
+    failed_sites = []
     # Process each site
     for site_name in site_subdirs:
         site_path = os.path.join(raw_data_dir, site_name)
@@ -279,24 +279,22 @@ def run_all_sites_processing(raw_data_dir, annotations_output_dir, koogu_output_
                 tag_mapping
             )
             if not success:
-                all_sites_successful = False
+                failed_sites.append(site_name)
                 print(f"Processing failed for site: {site_name}")
         except ValueError as ve:
              print(ve) # Print the specific validation error
-             all_sites_successful = False
-             print(f"Stopping workflow due to validation error in site: {site_name}")
-             return False # Stop the whole process on validation error
+             failed_sites.append(site_name)
+             print(f"Validation error in site: {site_name} - continuing with other sites")
         except Exception as e:
-            all_sites_successful = False
+            failed_sites.append(site_name)
             print(f"An unexpected error occurred while processing site {site_name}: {e}")
 
-
-    if all_sites_successful:
+    if not failed_sites:
         print("\nAll sites processed successfully.")
     else:
-        print("\nWarning: Processing failed for one or more sites.")
+        print(f"\nProcessing completed with {len(failed_sites)} failed sites.")
         
-    return all_sites_successful
+    return failed_sites
 
 
 # Keep the __main__ block for potential direct execution, but it won't be used by the workflow script

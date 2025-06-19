@@ -1,1 +1,0 @@
-Selection	View	Channel	Begin File	End File	Begin Time (s)	End Time (s)	Beg File Samp (samples)	End File Samp (samples)	Begin Date Time	Delta Time (s)	Low Freq (Hz)	High Freq (Hz)	Dur 90% (s)	Freq 5% (Hz)	Freq 95% (Hz)	Tags
