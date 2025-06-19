@@ -92,7 +92,7 @@ def main():
 
     # --- Stage 2: Generate Spectrograms --- 
     print("\n=== Stage 2: Generating Spectrograms ===")
-    stage2_success = run_spectrogram_generation(
+    stage2_failed_sites = run_spectrogram_generation(
         koogu_output_dir=koogu_output_dir,
         spectrograms_output_dir=spectrograms_dir,
         clips_output_dir=clips_dir,
@@ -100,15 +100,19 @@ def main():
         site_to_process=args.site # Pass the specific site if provided
     )
 
-    if not stage2_success:
-        print("\nError: Stage 2 (Spectrogram Generation) failed. Exiting workflow.")
-        sys.exit(1)
+    if stage2_failed_sites:
+        print(f"\nWarning: Spectrogram generation failed for the following sites: {', '.join(stage2_failed_sites)}")
     print("=== Stage 2 Completed ===")
 
     # --- Workflow Summary --- 
     print("\n--- Preprocessing Workflow Completed ---")
-    if failed_sites:
-        print(f"Warning: {len(failed_sites)} sites failed during Stage 1: {', '.join(failed_sites)}")
+    total_failed_sites = set(failed_sites + stage2_failed_sites)
+    if total_failed_sites:
+        print(f"Warning: {len(total_failed_sites)} sites had failures during processing: {', '.join(sorted(total_failed_sites))}")
+        if failed_sites:
+            print(f"  - Stage 1 failures: {', '.join(failed_sites)}")
+        if stage2_failed_sites:
+            print(f"  - Stage 2 failures: {', '.join(stage2_failed_sites)}")
     if not args.skip_koogu:
         print(f"Annotations saved in subdirectories under: {annotations_dir}")
         print(f"Koogu output saved in subdirectories under: {koogu_output_dir}")

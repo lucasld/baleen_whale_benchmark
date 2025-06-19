@@ -261,20 +261,20 @@ def run_spectrogram_generation(koogu_output_dir, spectrograms_output_dir, clips_
     # Find all site directories in the Koogu output directory
     if not os.path.isdir(koogu_output_dir):
         print(f"Error: Koogu output directory not found: {koogu_output_dir}")
-        return False
+        return [site_to_process] if site_to_process else []
         
     if site_to_process:
         site_dirs = [os.path.join(koogu_output_dir, site_to_process)]
         if not os.path.isdir(site_dirs[0]):
             print(f"Error: Specified site directory not found: {site_dirs[0]}")
-            return False
+            return [site_to_process]
     else:
         site_dirs = [os.path.join(koogu_output_dir, d) for d in os.listdir(koogu_output_dir) 
                      if os.path.isdir(os.path.join(koogu_output_dir, d))]
     
     if not site_dirs:
         print(f"No site directories found in Koogu output path: {koogu_output_dir}")
-        return False
+        return []
     
     print(f"Found {len(site_dirs)} sites to process: {', '.join([os.path.basename(d) for d in site_dirs])}")
     
@@ -290,9 +290,10 @@ def run_spectrogram_generation(koogu_output_dir, spectrograms_output_dir, clips_
             print(f"Could not load existing counters from {counter_file}, starting fresh: {e}")
             class_counters = {} # Ensure it's a dict
 
-    all_sites_successful = True
+    failed_sites = []
     # Process each site
     for site_dir in site_dirs:
+        site_name = os.path.basename(site_dir)
         try:
             success = generate_spectrograms_for_site(
                  site_dir, spectrograms_output_dir, clips_output_dir, 
@@ -300,19 +301,15 @@ def run_spectrogram_generation(koogu_output_dir, spectrograms_output_dir, clips_
                  expected_classes
             )
             if not success:
-                 all_sites_successful = False
-                 print(f"Spectrogram generation failed for site: {os.path.basename(site_dir)}")
+                 failed_sites.append(site_name)
+                 print(f"Spectrogram generation failed for site: {site_name}")
         except ValueError as ve:
              print(ve) # Print the specific validation error
-             all_sites_successful = False
-             print(f"Stopping workflow due to validation error in site: {os.path.basename(site_dir)}")
-             # Save counters even if we stop early
-             with open(counter_file, 'w') as f:
-                 json.dump(class_counters, f, indent=2)
-             return False # Stop the whole process on validation error
+             failed_sites.append(site_name)
+             print(f"Validation error in site: {site_name} - continuing with other sites")
         except Exception as e:
-            all_sites_successful = False
-            print(f"An unexpected error occurred while generating spectrograms for site {os.path.basename(site_dir)}: {e}")
+            failed_sites.append(site_name)
+            print(f"An unexpected error occurred while generating spectrograms for site {site_name}: {e}")
             
     # Save the final counter file
     try:
@@ -322,13 +319,13 @@ def run_spectrogram_generation(koogu_output_dir, spectrograms_output_dir, clips_
     except Exception as e:
         print(f"Warning: Could not save final class counters: {e}")
 
-    if all_sites_successful:
+    if not failed_sites:
         print("\nAll sites processed successfully for spectrogram generation.")
         print(f"Final spectrogram counts per class: {class_counters}")
     else:
-        print("\nWarning: Spectrogram generation failed for one or more sites.")
+        print(f"\nSpectrogram generation completed with {len(failed_sites)} failed sites.")
         
-    return all_sites_successful
+    return failed_sites
 
 # Keep the __main__ block for potential direct execution
 if __name__ == "__main__":

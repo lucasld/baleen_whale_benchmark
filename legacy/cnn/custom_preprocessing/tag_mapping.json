@@ -28,7 +28,7 @@
   "MinkeDS": "_IGNORE",
   "minke": "_IGNORE",
   "humpback": "_IGNORE",
-  "unid": "Noise",
-  "Unidentified.calls": "Noise",
-  "Unidentified.calls.": "Noise"
+  "unid": "_IGNORE",
+  "Unidentified.calls": "_IGNORE",
+  "Unidentified.calls.": "_IGNORE"
 }

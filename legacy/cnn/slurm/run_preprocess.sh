@@ -18,7 +18,7 @@ conda activate whale_env
 
 # Set paths
 export BASE_DIR="/share/klab/danthes/lliessduques/baleen_whale_benchmark/legacy/cnn"
-export RAW_DATA_PATH="${BASE_DIR}/slurm/outputs/prepared_dataset"
+export RAW_DATA_PATH="${BASE_DIR}/datasets/prepared_dataset"
 export OUTPUT_DIR="/share/klab/lliessduques/whale_output"
 export CONFIG_PATH="${BASE_DIR}/config.json"
 export TAG_MAPPING_PATH="${BASE_DIR}/custom_preprocessing/tag_mapping.json"

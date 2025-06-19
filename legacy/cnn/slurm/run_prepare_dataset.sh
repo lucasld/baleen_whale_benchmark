@@ -19,7 +19,7 @@ conda activate whale_env
 # Set paths
 export BASE_DIR="/share/klab/danthes/lliessduques/baleen_whale_benchmark/legacy/cnn"
 export RAW_DATA_PATH="/share/klab/danthes/data/ArcticWhales_AADC"
-export OUTPUT_DIR="${BASE_DIR}/slurm/outputs"
+export OUTPUT_DIR="${BASE_DIR}/datasets"
 
 # Add custom_preprocessing to Python path
 export PYTHONPATH="${BASE_DIR}/custom_preprocessing:${PYTHONPATH}"
