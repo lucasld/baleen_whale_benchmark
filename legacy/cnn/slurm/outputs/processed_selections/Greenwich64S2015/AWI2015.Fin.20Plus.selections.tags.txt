@@ -1,0 +1,2 @@
+Selection	View	Channel	Begin File	End File	Begin Time (s)	End Time (s)	Beg File Samp (samples)	End File Samp (samples)	Begin Date Time	Delta Time (s)	Low Freq (Hz)	High Freq (Hz)	Dur 90% (s)	Freq 5% (Hz)	Freq 95% (Hz)	Tags
+1	Spectrogram 1	1	20150314-161055_AWI229-11_SV1057.wav	20150314-161055_AWI229-11_SV1057.wav	22337.116533475	22339.081533475	14377	14875	2015/3/14  16:11:51.117	1.965	16.1	100.9	1.8	16.8	78.1	Fin.20Plus
