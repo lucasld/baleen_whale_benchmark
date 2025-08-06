@@ -1,5 +1,6 @@
 import json
-
+import argparse  # TODO: Added argparse for command-line arguments
+import pathlib   # TODO: Added pathlib for path handling
 import pandas as pd
 
 import dataset
@@ -10,10 +11,12 @@ import model
 def test_multiple_models(mother_folder, ds):
     con_mat = pd.DataFrame()
     for folder in mother_folder.glob('*'):
-        if folder.isdir():
+        if folder.is_dir():  # TODO: Changed isdir() to is_dir() for pathlib compatibility
             con_mat_i = training.test_model_from_folder(folder, ds)
-            con_matrix_i = con_matrix_i.reset_index(drop=False, names='label')
-            con_matrix_i['fold'] = folder.name
+            # TODO: Changed from `reset_index(names='label')` to a two-step reset and rename for backwards compatibility with older pandas versions.
+            con_mat_i = con_mat_i.reset_index(drop=False)
+            con_mat_i = con_mat_i.rename(columns={'index': 'label'})
+            con_mat_i['fold'] = folder.name
             con_mat = pd.concat([con_mat, con_mat_i])
     con_matrix = con_mat.drop(columns=['fold'])
     con_matrix_avg = con_matrix.groupby('label').mean()
@@ -22,12 +25,22 @@ def test_multiple_models(mother_folder, ds):
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    config_file = input('Where is the config file?')
+    # TODO: Added command-line argument parsing
+    parser = argparse.ArgumentParser(description='Test trained CNN models')
+    parser.add_argument('--config', type=str, required=True, help='Path to the config file')
+    parser.add_argument('--model_folder', type=str, required=True, help='Path to the folder containing trained models')
+    args = parser.parse_args()
+    
+    # TODO: Commented out input() calls and replaced with command-line arguments
+    # config_file = input('Where is the config file?')
+    config_file = args.config
+    
     # Read the config file
-    f = open(config_file)
-    config = json.load(f)
+    with open(config_file) as f:  # TODO: Changed to use with statement for file handling
+        config = json.load(f)
 
-    model_folder = input('Where is the folder to test?')
+    # model_folder = input('Where is the folder to test?')
+    model_folder = pathlib.Path(args.model_folder)  # TODO: Convert to Path object
 
     #  Load the test dataset
     spectro_ds = dataset.SpectrogramDataSet(data_dir=config['DATA_DIR'],

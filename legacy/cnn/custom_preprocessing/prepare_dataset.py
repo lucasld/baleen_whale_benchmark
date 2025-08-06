@@ -7,16 +7,6 @@ import argparse
 from pathlib import Path
 
 
-def extract_tag_from_filename(filename):
-    """Extract tag from selection filename pattern: Site.Tag.selections.txt"""
-    basename = os.path.basename(filename)
-    if '.selections.txt' in basename:
-        parts = basename.replace('.selections.txt', '').split('.')
-        if len(parts) >= 2:
-            return '.'.join(parts[1:])  # Everything after site name
-    return None
-
-
 def create_wav_symlinks(original_wav_dir, new_wav_dir):
     """Create symbolic links to all WAV files in the original directory."""
     if not os.path.exists(original_wav_dir):
@@ -41,84 +31,105 @@ def create_wav_symlinks(original_wav_dir, new_wav_dir):
     return len(wav_files)
 
 
-def process_site(site_path, output_dir):
-    """Process all selection files in a site, add Tags column, and create WAV symlinks."""
-    site_name = os.path.basename(site_path)
+def process_site(site_name, site_path, output_dir, file_tag_mapping):
+    """Process all selection files in a site using the hardcoded file-tag mapping."""
     print(f"Processing site: {site_name}")
     
-    selection_files = glob.glob(os.path.join(site_path, '*.selections.txt'))
-    if not selection_files:
-        print(f"  No selection files found in {site_name}")
-        return set()
+    # Get the file mapping for this site
+    site_mapping = file_tag_mapping.get(site_name, {})
+    if not site_mapping:
+        print(f"  No mapping found for site {site_name}")
+        return
     
-    site_tags = set()
     site_output_dir = os.path.join(output_dir, site_name)
     os.makedirs(site_output_dir, exist_ok=True)
     
-    # Process selection files
-    for file_path in selection_files:
-        tag = extract_tag_from_filename(file_path)
-        if not tag:
-            print(f"  Warning: Could not extract tag from {os.path.basename(file_path)}")
+    processed_files = 0
+    site_tags = set()
+    
+    # Process each file in the mapping
+    for file_name, tag in site_mapping.items():
+        file_path = os.path.join(site_path, file_name)
+        
+        if not os.path.exists(file_path):
+            print(f"  Warning: File not found: {file_path}")
+            continue
+            
+        # Skip files marked for ignoring
+        if tag == "_IGNORE":
+            print(f"  Skipping {file_name} (marked as _IGNORE)")
             continue
             
         site_tags.add(tag)
         
         try:
-            df = pd.read_csv(file_path, sep='\t')
+            # Try tab-separated first, then comma-separated
+            try:
+                df = pd.read_csv(file_path, sep='\t')
+            except:
+                try:
+                    df = pd.read_csv(file_path, sep=',')
+                except Exception as e:
+                    print(f"  Error: Could not parse {file_name} as CSV or TSV: {e}")
+                    continue
+                
+            # Add Tags column
             df['Tags'] = tag
+
+            # --- FIX FOR GREENWICH64S2015 FILENAME SUFFIX ---
+            if site_name.lower() == 'greenwich64s2015':
+                def strip_suffix(filename):
+                    if isinstance(filename, str) and filename.endswith('_AWI229-11_SV1057.wav'):
+                        return filename.replace('_AWI229-11_SV1057.wav', '.wav')
+                    return filename
+                if 'Begin File' in df.columns:
+                    df['Begin File'] = df['Begin File'].apply(strip_suffix)
+                if 'End File' in df.columns:
+                    df['End File'] = df['End File'].apply(strip_suffix)
+            # --- END FIX ---
             
             # Save as .selections.tags.txt
-            output_filename = os.path.basename(file_path).replace('.selections.txt', '.selections.tags.txt')
+            output_filename = os.path.basename(file_path).replace('.txt', '.selections.tags.txt')
             output_path = os.path.join(site_output_dir, output_filename)
             df.to_csv(output_path, sep='\t', index=False)
+            processed_files += 1
             
         except Exception as e:
-            print(f"  Error processing {os.path.basename(file_path)}: {e}")
+            print(f"  Error processing {file_name}: {e}")
     
-    print(f"  Processed {len(selection_files)} selection files with {len(site_tags)} unique tags")
+    print(f"  Processed {processed_files} selection files with {len(site_tags)} unique tags")
+    print(f"  Tags found: {sorted(site_tags)}")
     
     # Create WAV symlinks
     original_wav_dir = os.path.join(site_path, 'wav')
     new_wav_dir = os.path.join(site_output_dir, 'wav')
     wav_count = create_wav_symlinks(original_wav_dir, new_wav_dir)
-    
-    print(f"  Tags found: {sorted(site_tags)}")
-    return site_tags
-
-
-def create_tag_mapping_template(all_tags_by_site, output_path):
-    """Create a tag mapping template with unique tags and their locations."""
-    template = {
-        "_ABOUT": "Template for tag mapping. Replace location lists with target categories.",
-        "_NOTES": "Generated automatically from selection filenames"
-    }
-    
-    # Create reverse mapping: tag -> list of sites
-    tag_to_sites = {}
-    for site_name, tags in all_tags_by_site.items():
-        for tag in tags:
-            if tag not in tag_to_sites:
-                tag_to_sites[tag] = []
-            tag_to_sites[tag].append(site_name)
-    
-    # Add unique tags with comma-separated site lists
-    for tag in sorted(tag_to_sites.keys()):
-        sites = sorted(set(tag_to_sites[tag]))  # Remove duplicates and sort
-        template[tag] = ", ".join(sites)
-    
-    with open(output_path, 'w') as f:
-        json.dump(template, f, indent=2)
-    
-    print(f"\nTag mapping template saved to: {output_path}")
-    print(f"Total unique tags found: {len(tag_to_sites)}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Prepare dataset: extract tags, create selection files with Tags column, and symlink WAV files')
+    parser = argparse.ArgumentParser(description='Prepare dataset using hardcoded file-tag mapping')
     parser.add_argument('--raw_data', required=True, help='Original raw data directory path')
     parser.add_argument('--output', required=True, help='Output directory for prepared dataset')
+    parser.add_argument('--mapping', default=None, help='Path to file-tag mapping JSON (default: file_tag_mapping.json in the same directory as this script)')
     args = parser.parse_args()
+    
+    # Determine mapping file path
+    if args.mapping:
+        mapping_path = args.mapping
+    else:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        mapping_path = os.path.join(script_dir, 'file_tag_mapping.json')
+    
+    # Load the file-tag mapping
+    try:
+        with open(mapping_path, 'r') as f:
+            file_tag_mapping = json.load(f)
+            # Remove metadata keys
+            file_tag_mapping.pop('_ABOUT', None)
+            file_tag_mapping.pop('_NOTE', None)
+    except Exception as e:
+        print(f"Error loading mapping file {mapping_path}: {e}")
+        return
     
     raw_data_dir = Path(args.raw_data)
     output_dir = Path(args.output)
@@ -127,41 +138,25 @@ def main():
     
     print(f"Preparing dataset from: {raw_data_dir}")
     print(f"Output directory: {dataset_dir}")
+    print(f"Using mapping file: {mapping_path}")
     print(f"This will create:")
     print(f"  - Selection files with Tags column")
     print(f"  - Symbolic links to original WAV files")
-    print(f"  - Tag mapping template for scientist review")
     
-    # Find all site directories
-    site_dirs = [d for d in raw_data_dir.iterdir() 
-                 if d.is_dir() and not d.name.startswith('.') 
-                 and not d.name.startswith('0')]  # Skip docs/settings folders
-    
-    all_tags_by_site = {}
-    total_wav_files = 0
-    total_selection_files = 0
-    
-    for site_dir in sorted(site_dirs):
-        site_tags = process_site(site_dir, dataset_dir)
-        if site_tags:
-            all_tags_by_site[site_dir.name] = site_tags
-    
-    # Create tag mapping template
-    tag_mapping_path = output_dir / 'tag_mapping_template.json'
-    create_tag_mapping_template(all_tags_by_site, tag_mapping_path)
+    # Process each site in the mapping
+    for site_name in file_tag_mapping.keys():
+        site_path = raw_data_dir / site_name
+        if not site_path.exists():
+            print(f"Warning: Site directory not found: {site_path}")
+            continue
+        
+        process_site(site_name, site_path, dataset_dir, file_tag_mapping)
     
     print(f"\n{'='*60}")
     print(f"DATASET PREPARATION COMPLETE")
     print(f"{'='*60}")
-    print(f"Sites processed: {len(all_tags_by_site)}")
+    print(f"Sites processed: {len(file_tag_mapping)}")
     print(f"Prepared dataset location: {dataset_dir}")
-    print(f"Tag mapping template: {tag_mapping_path}")
-    print(f"\nNext steps:")
-    print(f"1. Review {tag_mapping_path}")
-    print(f"2. Replace location lists with target categories:")
-    print(f"   (20Plus, 20Hz, A, B, D, Dswp, Z, Noise, _IGNORE)")
-    print(f"3. Save completed mapping as tag_mapping.json")
-    print(f"4. Use prepared dataset for preprocessing workflow")
 
 
 if __name__ == "__main__":

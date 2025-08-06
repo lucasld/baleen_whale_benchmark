@@ -43,6 +43,10 @@ class Model:
             detection_metrics.noise_misclas_rate,
             detection_metrics.call_avg_tpr
         ]
+        # TODO: Create metrics_dict for load_model which needs a dict, not a list of metrics
+        self.metrics_dict = {m.name if hasattr(m, 'name') else m.__name__: m for m in self.metrics}
+        # TODO: Add custom loss function to the custom objects dictionary for loading the model.
+        self.metrics_dict['custom_cross_entropy'] = custom_cross_entropy
 
         # self.metrics = {'imbalanced_metric': detection_metrics.imbalanced_metric,
         #                 'noise_misclas_rate': detection_metrics.noise_misclas_rate,
@@ -97,7 +101,8 @@ class Model:
         self.model = model
 
     def load_existing(self):
-        self.model = tf.keras.models.load_model(self.log_path, custom_objects=self.metrics_dict)
+        # TODO: Load model from the 'model' sub-directory to match the save path.
+        self.model = tf.keras.models.load_model(self.log_path.joinpath('model'), custom_objects=self.metrics_dict)
 
     def train(self, x_train, y_train, x_valid, y_valid, batch_size, epochs, loss_function, early_stop,
               monitoring_metric, monitoring_direction, class_weights, learning_rate):
@@ -140,7 +145,7 @@ class Model:
                            metrics=self.metrics,
                            )
 
-        model_save_filename = self.log_path.joinpath('checkpoints')
+        model_save_filename = self.log_path.joinpath('checkpoints.weights.h5')  # Changed from 'checkpoints' to 'checkpoints.weights.h5' --- this is a change by lucas
 
         early_stopping_cb = keras.callbacks.EarlyStopping(monitor=monitoring_metric, mode=monitoring_direction,
                                                           patience=early_stop, restore_best_weights=True)

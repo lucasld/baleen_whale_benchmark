@@ -3,6 +3,8 @@ import pandas as pd
 import glob
 import shutil
 import json
+import traceback
+# from multiprocessing import Process, Queue # REMOVED
 from koogu.data.preprocess import from_selection_table_map
 
 
@@ -46,10 +48,19 @@ def apply_tag_mapping(tags_str, tag_mapping):
     return ','.join(result_tags)
 
 
-def process_site(site_path, base_annotations_dir, base_output_dir, expected_categories=None, tag_mapping=None):
+def process_site(site_path, base_annotations_dir, base_output_dir, site_config=None, expected_categories=None, tag_mapping=None):
     """Processes annotations and extracts clips for a single site."""
     site_name = os.path.basename(site_path)
     print(f"\n--- Processing Site: {site_name} ---")
+
+    # --- NEW: Get sample rate from site_config ---
+    if site_config and site_name in site_config:
+        sample_rate = site_config[site_name]
+        print(f"Using sample rate {sample_rate} Hz for site {site_name} from config.")
+    else:
+        print(f"ERROR: Sample rate for site '{site_name}' not found in site_config.json. Skipping.")
+        return False
+    # --- END NEW ---
 
     wav_folder = os.path.join(site_path, 'wav')
     if not os.path.exists(wav_folder):
@@ -90,7 +101,7 @@ def process_site(site_path, base_annotations_dir, base_output_dir, expected_cate
     all_annotations_df['Beg File Samp (samples)'] = pd.to_numeric(all_annotations_df['Beg File Samp (samples)'])
     all_annotations_df['End File Samp (samples)'] = pd.to_numeric(all_annotations_df['End File Samp (samples)'])
 
-    sample_rate = 1000.0  # Assuming constant sample rate, adjust if needed
+    # Use the sample rate loaded from config for this site
     all_annotations_df['Relative Begin Time (s)'] = all_annotations_df['Beg File Samp (samples)'] / sample_rate
     all_annotations_df['Relative End Time (s)'] = all_annotations_df['End File Samp (samples)'] / sample_rate
 
@@ -150,8 +161,66 @@ def process_site(site_path, base_annotations_dir, base_output_dir, expected_cate
             )
             raise ValueError(error_message)
 
-    # Create combined annotation files per WAV file
+    # Validate WAV file references before processing
     unique_wav_files = sorted(list(set(all_annotations_df['Begin File'])))
+    actual_wav_files = set(os.listdir(wav_folder)) if os.path.exists(wav_folder) else set()
+    
+    print(f"Validating WAV file references...")
+    print(f"Found {len(actual_wav_files)} actual WAV files in {wav_folder}")
+    print(f"Annotations reference {len(unique_wav_files)} unique WAV files")
+    
+    # To handle case-insensitivity for file extensions only, create a mapping
+    # Key: filename with lowercase extension, Value: original filename
+    def normalize_extension(filename):
+        """Convert only the file extension to lowercase, keep the rest unchanged"""
+        name, ext = os.path.splitext(filename)
+        return name + ext.lower()
+    
+    actual_wav_files_map = {normalize_extension(f): f for f in actual_wav_files}
+    
+    print(f"DEBUG: Sample actual files (first 5): {list(actual_wav_files)[:5]}")
+    print(f"DEBUG: Sample referenced files (first 5): {unique_wav_files[:5]}")
+    
+    # Check for missing WAV files (case-insensitive extensions only)
+    missing_wav_files = []
+    for wav_file in unique_wav_files:
+        normalized_ref = normalize_extension(wav_file)
+        if normalized_ref not in actual_wav_files_map:
+            missing_wav_files.append(wav_file)
+            print(f"DEBUG: Missing file '{wav_file}' -> looking for '{normalized_ref}'")
+        else:
+            print(f"DEBUG: Found match for '{wav_file}' -> '{actual_wav_files_map[normalized_ref]}'")
+            if len(missing_wav_files) == 0:  # Only show first few matches to avoid spam
+                continue
+            break
+    
+    if missing_wav_files:
+        print(f"WARNING: {len(missing_wav_files)} WAV files referenced in annotations but not found:")
+        for i, missing_file in enumerate(missing_wav_files):
+            if i < 10:  # Show first 10
+                print(f"  - {missing_file}")
+            elif i == 10:
+                print(f"  ... and {len(missing_wav_files) - 10} more")
+        print(f"Filtering out annotations for missing files and continuing...")
+        
+        # Remove annotations for missing files
+        missing_files_set = set(missing_wav_files)
+        original_count = len(all_annotations_df)
+        all_annotations_df = all_annotations_df[~all_annotations_df['Begin File'].isin(missing_files_set)]
+        filtered_count = len(all_annotations_df)
+        print(f"Removed {original_count - filtered_count} annotations for missing files.")
+        print(f"Continuing with {filtered_count} annotations.")
+        
+        if filtered_count == 0:
+            print("ERROR: No annotations remaining after filtering missing files.")
+            return False
+        
+        # Update the unique WAV files list
+        unique_wav_files = sorted(list(set(all_annotations_df['Begin File'])))
+    
+    print(f"✅ All {len(unique_wav_files)} referenced WAV files found")
+    
+    # Create combined annotation files per WAV file
     audio_seltab_list = []
 
     print(f"Generating combined annotation files in: {site_annotations_dir}")
@@ -189,49 +258,82 @@ def process_site(site_path, base_annotations_dir, base_output_dir, expected_cate
         shutil.rmtree(site_output_dir)
     os.makedirs(site_output_dir, exist_ok=True)
 
-    # Run Koogu processing for the site
+    # --- Run Koogu processing directly ---
     print(f"Running Koogu processing for site {site_name}...")
     try:
         result = from_selection_table_map(
             audio_settings=audio_settings,
             audio_seltab_list=audio_seltab_list,
-            audio_root=wav_folder, # Specific site's WAV folder
-            seltab_root=site_annotations_dir, # Specific site's annotation folder
-            output_root=site_output_dir, # Specific site's Koogu output folder
+            audio_root=wav_folder,
+            seltab_root=site_annotations_dir,
+            output_root=site_output_dir,
             ignore_zero_annot_files=0,
-            negative_class_label=None,  # 'Noise', # Explicitly set Noise label for Koogu if needed
+            negative_class_label=None,
             attempt_salvage=True
         )
         print(f"Koogu processing complete for {site_name}.")
-        print("Result:", result) # Result dict now contains counts per class
-        
-        # Save the class names detected by Koogu to a json file for reference
-        # Koogu should create classes_list.json, let's check and report
-        koogu_classes_file = os.path.join(site_output_dir, 'classes_list.json')
-        if os.path.exists(koogu_classes_file):
-             with open(koogu_classes_file, 'r') as f:
-                koogu_classes = json.load(f)
-             print(f"Koogu detected classes: {koogu_classes}")
-        else:
-             print(f"Warning: Koogu did not create classes_list.json in {site_output_dir}")
-             # Optionally, save the unique_tags found earlier
-             # classes_file = os.path.join(site_output_dir, 'detected_tags.json')
-             # with open(classes_file, 'w') as f:
-             #    json.dump(list(unique_tags), f, indent=2)
-             # print(f"Saved detected tags to {classes_file}")
-        return True # Indicate success
-
+        print("Result:", result)
     except Exception as e:
-        print(f"Error during Koogu processing for site {site_name}: {e}")
-        return False # Indicate failure
+        print(f"ERROR: Koogu process failed for site {site_name} with an exception.")
+        print(traceback.format_exc())
+        return False
+        
+    # Validate Koogu output
+    print(f"Validating Koogu output...")
+    
+    # Check for .npz files (the actual processed clips)
+    npz_files = glob.glob(os.path.join(site_output_dir, "*.npz"))
+    print(f"Generated {len(npz_files)} .npz files")
+    
+    if len(npz_files) == 0:
+        print(f"ERROR: Koogu processing failed - no .npz files generated!")
+        print(f"This indicates Koogu could not process any annotations.")
+        print(f"Possible causes:")
+        print(f"  - Audio file format incompatibility")
+        print(f"  - Invalid annotation time ranges")
+        print(f"  - Missing or corrupted audio files")
+        print(f"  - Koogu library configuration issues")
+        return False
+    
+    # Check for classes_list.json
+    koogu_classes_file = os.path.join(site_output_dir, 'classes_list.json')
+    if os.path.exists(koogu_classes_file):
+        with open(koogu_classes_file, 'r') as f:
+            koogu_classes = json.load(f)
+        print(f"Koogu detected classes: {koogu_classes}")
+    else:
+        print(f"Warning: Koogu did not create classes_list.json in {site_output_dir}")
+    
+    # Report success with details
+    total_size = sum(os.path.getsize(f) for f in npz_files if os.path.exists(f))
+    print(f"✅ Koogu processing successful!")
+    print(f"   Generated {len(npz_files)} clip files ({total_size / 1024 / 1024:.1f} MB)")
+    
+    return True # Indicate success
+
 
 # Define a new function to orchestrate the processing for all sites
-def run_all_sites_processing(raw_data_dir, annotations_output_dir, koogu_output_dir, config_path=None, tag_mapping_path=None):
+def run_all_sites_processing(raw_data_dir, annotations_output_dir, koogu_output_dir, config_path=None, tag_mapping_path=None, site_config_path=None):
     """Finds all sites and runs the processing pipeline for each."""
     print(f"Starting site processing.")
     print(f"Raw data source: {raw_data_dir}")
     print(f"Annotations output: {annotations_output_dir}")
     print(f"Koogu output: {koogu_output_dir}")
+
+    # --- NEW: Load site config for sample rates ---
+    site_config = None
+    if site_config_path and os.path.exists(site_config_path):
+        try:
+            with open(site_config_path, 'r') as f:
+                site_config = json.load(f)
+            print(f"Loaded site configuration from {site_config_path}")
+        except Exception as e:
+            print(f"ERROR: Could not load site config file {site_config_path}: {e}. Aborting.")
+            return [] # Cannot proceed without sample rates
+    else:
+        print(f"ERROR: Site config file not found at {site_config_path}. Aborting.")
+        return []
+    # --- END NEW ---
 
     # Load tag mapping
     tag_mapping = load_tag_mapping(tag_mapping_path)
@@ -256,7 +358,7 @@ def run_all_sites_processing(raw_data_dir, annotations_output_dir, koogu_output_
     if not os.path.isdir(raw_data_dir):
         print(f"Error: Raw data directory not found: {raw_data_dir}")
         return list(os.listdir('.'))  # Return all as failed if directory doesn't exist
-
+        
     all_subdirs = [d for d in os.listdir(raw_data_dir) if os.path.isdir(os.path.join(raw_data_dir, d))]
     site_subdirs = [d for d in all_subdirs if not d[0].isdigit()] # Filter out dirs starting with a digit
 
@@ -274,7 +376,8 @@ def run_all_sites_processing(raw_data_dir, annotations_output_dir, koogu_output_
             success = process_site(
                 site_path, 
                 annotations_output_dir, 
-                koogu_output_dir, 
+                koogu_output_dir,
+                site_config, # Pass the site config dictionary
                 expected_categories,
                 tag_mapping
             )
@@ -317,5 +420,7 @@ if __name__ == "__main__":
         annotations_output_input, 
         koogu_output_input, 
         config_path_input,
-        tag_mapping_path_input
-    ) 
+        tag_mapping_path_input,
+        # Add site_config_path for direct execution
+        os.path.join(os.path.dirname(__file__), 'site_config.json')
+    )

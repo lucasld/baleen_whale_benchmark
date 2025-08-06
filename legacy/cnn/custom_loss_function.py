@@ -1,4 +1,3 @@
-
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import losses
@@ -128,8 +127,8 @@ def custom_cross_entropy(y_actual: tf.Tensor, y_prediction: tf.Tensor) -> tf.Ten
 
 @tf.function
 def number_comparison(actual, predicted):
-    new_tensor = tf.math.subtract(tf.math.exp(actual), tf.math.exp(predicted))
-    weightings = tf.zeros([tf.size(new_tensor)])
+    new_tensor = tf.math.subtract(tf.math.exp(actual), tf.math.exp(predicted)) 
+    weightings = tf.zeros_like(new_tensor)  #TODO: changed from originally: weightings = tf.zeros([tf.size(new_tensor)])
     weightings = tf.where(new_tensor == 0, 0.07, weightings)
     weightings = tf.where(tf.less(new_tensor, 7) & tf.math.not_equal(new_tensor, 0) & tf.greater(new_tensor,-10), 0.2, weightings)
     weightings = tf.where(new_tensor < -10, 0.1, weightings)

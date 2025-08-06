@@ -1,0 +1,128 @@
+{
+    "_ABOUT": "This file maps selection files to their corresponding tags",
+    "_NOTE": "Paths are relative to the raw data directory",
+    "BallenyIslands2015": {
+        "Balleny2015.BmAnt-A.selections.txt": "A",
+        "Balleny2015.BmAnt-B.selections.txt": "B",
+        "Balleny2015.BmAnt-Z.selections.txt": "Z",
+        "Balleny2015.BmD.selections.txt": "D",
+        "Balleny2015.Bp20Hz.selections.txt": "20Hz",
+        "Balleny2015.Bp20Plus.selections.txt": "20Plus",
+        "Balleny2015.BpDwnswp.selections.txt": "Dswp",
+        "Balleny2015.BpHigherCall.selections.txt": "_IGNORE",
+        "Balleny2015.humpback.selections.txt": "_IGNORE",
+        "Balleny2015.minke.selections.txt": "_IGNORE",
+        "Balleny2015.unid.selections.txt": "Noise"
+    },
+    "casey2014": {
+        "Casey2014.Bm.Ant-A.selections.txt": "A",
+        "Casey2014.Bm.Ant-B.selections.txt": "B",
+        "Casey2014.Bm.Ant-Z.selections.txt": "Z",
+        "Casey2014.Bm.D.selections.txt": "D",
+        "Casey2014.Bp.20Hz.selections.txt": "20Hz",
+        "Casey2014.Bp.20Plus.selections.txt": "20Plus",
+        "Casey2014.Bp.Downsweep.selections.txt": "Dswp",
+        "Casey2014.Unidentified.calls.selections.txt": "Noise"
+    },
+    "casey2017": {
+        "Casey2017.Bm.Ant-A.selections.txt": "A",
+        "Casey2017.Bm.Ant-B.selections.txt": "B",
+        "Casey2017.Bm.Ant-Z.selections.txt": "Z",
+        "Casey2017.Bm.D.selections.txt": "D",
+        "Casey2017.Bp.20Hz.selections.txt": "20Hz",
+        "Casey2017.Bp.20Plus.selections.txt": "20Plus",
+        "Casey2017.Bp.Downsweep.selections.txt": "Dswp",
+        "Casey2017.Unidentified.calls.selections.txt": "Noise"
+    },
+    "ElephantIsland2013Aural": {
+        "AWI2013_AU0231.Bm.Ant-A..selections.txt": "A",
+        "AWI2013_AU0231.Bm.Ant-B.selections.txt": "B",
+        "AWI2013_AU0231.Bm.Ant-Z.selections.txt": "Z",
+        "AWI2013_AU0231.Bm.D.selections.txt": "D",
+        "AWI2013_AU0231.Bp-20Hz.selections.txt": "20Hz",
+        "AWI2013_AU0231.Bp-20Plus.selections.txt": "20Plus",
+        "AWI2013_AU0231.Bp-Downsweep.selections.txt": "Dswp",
+        "AWI2013_AU0231.Hump.txt": "_IGNORE",
+        "AWI2013_AU0231.MinkeBio.selections.txt": "_IGNORE",
+        "AWI2013_AU0231.MinkeDS.selections.txt": "_IGNORE",
+        "AWI2013_AU0231.Tonal30Hz.txt": "_IGNORE",
+        "AWI2013_AU0231.Unidentified.calls.selection.txt": "Noise"
+    },
+    "ElephantIsland2014": {
+        "Bm_Ant-A.txt": "A",
+        "Bm_Ant-B.txt": "B",
+        "Bm_Ant-Z.txt": "Z",
+        "Bm_Dcalls.txt": "D",
+        "Bp_20Hz.txt": "20Hz",
+        "Bp_20Plus.txt": "20Plus",
+        "Bp_Dswp.txt": "Dswp",
+        "Unknown_calls.txt": "Noise",
+        "recurrent_unknow_pulses.selections.txt": "_IGNORE",
+        "backbeats.txt": "_IGNORE"
+    },
+    "Greenwich64S2015": {
+        "AWI2015.Bm.Ant-A..selections.txt": "A",
+        "AWI2015.Bm.Ant-B.selections.txt": "B",
+        "AWI2015.Bm.Ant-Z.selections.txt": "Z",
+        "AWI2015.Bm.D.selections.txt": "D",
+        "AWI2015.Fin.20Hz.selections.txt": "20Hz",
+        "AWI2015.Fin.20Plus.selections.txt": "20Plus",
+        "AWI2015.Fin.DS.selections.txt": "Dswp",
+        "AWI2015.Unidentified.calls.selections.txt": "Noise"
+    },
+    "kerguelen2005": {
+        "Kerguelen2005.Bm.Ant-A.selections.txt": "A",
+        "Kerguelen2005.Bm.Ant-B.selections.txt": "B",
+        "Kerguelen2005.Bm.Ant-Z.selections.txt": "Z",
+        "Kerguelen2005.Bm.D.selections.txt": "D",
+        "Kerguelen2005.Fin.20Hz.selections.txt": "20Hz",
+        "Kerguelen2005.Fin.20Plus.selections.txt": "20Plus",
+        "Kerguelen2005.Fin.DS.selections.txt": "Dswp",
+        "Kerguelen2005.MinkeDS.selections.txt": "_IGNORE",
+        "Kerguelen2005.Unidentified.calls..selections.txt": "Noise"
+    },
+    "kerguelen2014": {
+        "Kerguelen2014.Bm.Ant-A.selections.txt": "A",
+        "Kerguelen2014.Bm.Ant-B.selections.txt": "B",
+        "Kerguelen2014.Bm.Ant-Z.selections.txt": "Z",
+        "Kerguelen2014.Bm.D.selections.txt": "D",
+        "Kerguelen2014.Bp.20Hz.selections.txt": "20Hz",
+        "Kerguelen2014.Bp.20Plus.selections.txt": "20Plus",
+        "Kerguelen2014.Bp.Downsweep.selections.txt": "Dswp",
+        "Kerguelen2014.Unidentified.calls.selections.txt": "Noise"
+    },
+    "kerguelen2015": {
+        "Kerguelen2015.Bm.Ant-A.selections.txt": "A",
+        "Kerguelen2015.Bm.Ant-B.selections.txt": "B",
+        "Kerguelen2015.Bm.Ant-Z.selections.txt": "Z",
+        "Kerguelen2015.Bm.D.selections.txt": "D",
+        "Kerguelen2015.Fin.20Hz.selections.txt": "20Hz",
+        "Kerguelen2015.Fin.20Plus.selections.txt": "20Plus",
+        "Kerguelen2015.Fin.DS.selections.txt": "Dswp",
+        "Kerguelen2015.MinkeDS.selections.txt": "_IGNORE",
+        "Kerguelen2015.Unidentified.calls.selections.txt": "Noise"
+    },
+    "MaudRise2014": {
+        "MaudRise2014_Bm_Ant-A.txt": "A",
+        "MaudRise2014_Bm_Ant-B.txt": "B",
+        "MaudRise2014_Bm_Ant-Z.txt": "Z",
+        "MaudRise2014_Bm_D.txt": "D",
+        "MaudRise2014_Bm_SWI.txt": "_IGNORE",
+        "MaudRise2014_Bp20Plus.txt": "20Plus",
+        "MaudRise2014_Bp20.txt": "20Hz",
+        "MaudRise2014_Bp-Downsweep.txt": "Dswp",
+        "MaudRise2014_Minke_BioduckAndDownsweeps.txt": "_IGNORE",
+        "MaudRise2014_SWI.txt": "_IGNORE",
+        "MaudRise2014_Unidentified.txt": "Noise"
+    },
+    "RossSea2014": {
+        "RossSea2014.Bm.Ant-A.selections.txt": "A",
+        "RossSea2014.Bm.Ant-B.selections.txt": "B",
+        "RossSea2014.Bm.Ant-Z.selections.txt": "Z",
+        "RossSea2014.Bm.D.selections.txt": "D",
+        "RossSea2014.Bp.20Hz.selections.txt": "20Hz",
+        "RossSea2014.Bp.20Plus.selections.txt": "20Plus",
+        "RossSea2014.Bp.DS.selections.txt": "Dswp",
+        "RossSea2014.unid.selections.txt": "Noise"
+    }
+}

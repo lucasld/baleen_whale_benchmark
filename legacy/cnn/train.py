@@ -45,6 +45,10 @@ def run_from_config(config_path, log_path=None):
                                     corrected=config['USE_CORRECTED_DATASET'],
                                     samples_per_class=config['SAMPLES_PER_CLASS'])
 
+    # Save the label mapping to a file
+    with open(log_path.joinpath('labels.json'), 'w') as f:
+        json.dump(ds.classes2int, f, indent=4)
+
     # Define initial noise percentage
     noise_init_training = config['NOISE_RATIO'][0]
     noise_init_test = config['NOISE_RATIO_TEST'][0]
@@ -59,7 +63,8 @@ def run_from_config(config_path, log_path=None):
         scores_i, con_matrix_i = training.run_multiple_models(log_path, paths_df, config=config, fold=0, ds=ds,
                                                               perform_test=config['test_after_training'])
         scores = scores_i
-        con_matrix = con_matrix_i.reset_index(drop=False, names='label')
+        con_matrix = con_matrix_i.reset_index(drop=False)  # TODO: Removed name/names parameter as pandas 1.3.5 doesn't support either
+        con_matrix = con_matrix.rename(columns={'index': 'label'})  # Rename the index column after reset
 
     elif type(config['TEST_SPLIT']) == int:
         print('Performing K-fold stratified cross validation with K=%s. '
@@ -73,7 +78,8 @@ def run_from_config(config_path, log_path=None):
                                                                   perform_test=config['test_after_training'])
             scores_i['fold'] = fold
             scores = pd.concat([scores, scores_i], ignore_index=True)
-            con_matrix_i = con_matrix_i.reset_index(drop=False, names='label')
+            con_matrix_i = con_matrix_i.reset_index(drop=False)  # TODO: Removed name/names parameter as pandas 1.3.5 doesn't support either
+            con_matrix_i = con_matrix_i.rename(columns={'index': 'label'})  # Rename the index column after reset
             con_matrix_i['fold'] = fold
             con_matrix = pd.concat([con_matrix, con_matrix_i], ignore_index=True)
 
@@ -91,7 +97,8 @@ def run_from_config(config_path, log_path=None):
 
             scores_i['fold'] = loc
             scores = pd.concat([scores, scores_i], ignore_index=True)
-            con_matrix_i = con_matrix_i.reset_index(drop=False, names='label')
+            con_matrix_i = con_matrix_i.reset_index(drop=False)  # TODO: Removed name/names parameter as pandas 1.3.5 doesn't support either
+            con_matrix_i = con_matrix_i.rename(columns={'index': 'label'})  # Rename the index column after reset
             con_matrix_i['fold'] = loc
             con_matrix = pd.concat([con_matrix, con_matrix_i], ignore_index=True)
 

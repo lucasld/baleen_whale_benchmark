@@ -10,3 +10,4 @@ __pycache__/
 legacy/cnn/outputs/
 legacy/cnn/slurm/outputs/
 legacy/cnn/datasets/
+legacy/cnn/docs

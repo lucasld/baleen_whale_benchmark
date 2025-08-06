@@ -26,6 +26,9 @@ def main():
     parser.add_argument('--tag_mapping', type=str, default=None,
                         help='Path to the tag_mapping.json file (maps annotation tags to expected class names). '
                              'Default is tag_mapping.json in the custom_preprocessing directory.')
+    parser.add_argument('--site_config', type=str, default=None,
+                        help='Path to the site_config.json file for per-site sample rates. '
+                             'Default is site_config.json in the custom_preprocessing directory.')
     parser.add_argument('--skip_koogu', action='store_true',
                         help='Skip the annotation processing and Koogu execution (Stage 1) and only generate spectrograms from existing Koogu output.')
     parser.add_argument('--site', type=str, default=None,
@@ -39,6 +42,7 @@ def main():
     output_dir = os.path.abspath(args.output)
     config_path = os.path.abspath(args.config) if args.config else None
     tag_mapping_path = os.path.abspath(args.tag_mapping) if args.tag_mapping else None
+    site_config_path = os.path.abspath(args.site_config) if args.site_config else None
 
     # Define the structured output directories
     annotations_dir = os.path.join(output_dir, 'annotations')
@@ -70,6 +74,19 @@ def main():
         print(f"Warning: Tag mapping file specified but not found: {tag_mapping_path}")
     # Otherwise we'll use the default mapping file in the same directory as process_all_sites.py
 
+    # --- NEW: Check for site_config.json ---
+    # Default to the one in the same directory as this script
+    if not site_config_path:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        site_config_path = os.path.join(script_dir, 'site_config.json')
+
+    if os.path.exists(site_config_path):
+        print(f"Using Site Config File: {site_config_path}")
+    else:
+        print(f"ERROR: Site config file not found at {site_config_path}. This file is required.")
+        sys.exit(1)
+    # --- END NEW ---
+
     # --- Stage 1: Process Annotations and Run Koogu --- 
     failed_sites = []
     if not args.skip_koogu:
@@ -81,7 +98,8 @@ def main():
             annotations_output_dir=annotations_dir, 
             koogu_output_dir=koogu_output_dir,
             config_path=config_path,
-            tag_mapping_path=tag_mapping_path
+            tag_mapping_path=tag_mapping_path,
+            site_config_path=site_config_path  # Pass the new config path
         )
         if failed_sites:
             print(f"\nWarning: The following sites failed processing: {', '.join(failed_sites)}")

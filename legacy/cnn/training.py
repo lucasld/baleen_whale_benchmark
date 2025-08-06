@@ -98,7 +98,9 @@ def test_model_from_folder(folder_path, ds):
     m = model.Model(save_path=folder_path.parent, categories=ds.categories, model_name=folder_path.name)
     m.load_existing()
     csv_split_file = m.log_path.joinpath('data_used_%s.csv' % m.model_name)
-    con_mat = m.predict_full_ds(ds, csv_split_file)
+    # TODO: Load data from csv before calling test_in_batches, which expects a DataFrame, not a path.
+    data_split_df = pd.read_csv(csv_split_file)
+    _, con_mat, _ = m.test_in_batches(ds, data_split_df)
     return con_mat
 
 
