@@ -39,7 +39,8 @@
       "Dswp"
     ]
   },
-  "SAMPLES_PER_CLASS": 300,
+  "SAMPLES_PER_CLASS": 30000,
+  "comment_SAMPLES_PER_CLASS": "TODO: changed from 300 to 30000 since 30000 was said in the paper",
   "NOISE_RATIO": [
     0.25
   ],
@@ -50,13 +51,15 @@
   "VALID_SPLIT": 0.3,
   "TEST_SPLIT": "blocked",
   "model_name": "IdilCNN",
-  "BATCH_SIZE": 32,
+  "BATCH_SIZE": 16,
+  "_comment_BATCH_SIZE": "TODO: changed from 32 to 16 since 16 was said in the paper",
   "EPOCHS": 100,
   "early_stop": 20,
   "monitoring_metric": "val_imbalanced_metric",
   "monitoring_direction": "max",
   "loss_function": "custom_cross_entropy",
-  "learning_rate": 0.001,
+  "learning_rate": 0.0001,
+  "_commtent_learning_rate": "TODO: changed from 0.001 to 0.0001 since 0.0001 was said in the paper",
   "CLASS_WEIGHTS": null,
   "test_after_training": true
 }
