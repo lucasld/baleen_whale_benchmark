@@ -7,7 +7,7 @@ __pycache__/
 #*.npz
 *.md
 .DS_Store
-legacy/cnn/outputs/
-legacy/cnn/slurm/outputs/
-legacy/cnn/datasets/
-legacy/cnn/docs
+src/outputs/
+src/slurm/outputs/
+src/datasets/
+docs/
