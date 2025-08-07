@@ -17,18 +17,18 @@ eval "$(conda shell.bash hook)"
 conda activate whale_env
 
 # Set paths
-export BASE_DIR="/share/klab/danthes/lliessduques/baleen_whale_benchmark/legacy/cnn"
+export BASE_DIR="/share/klab/danthes/lliessduques/test/baleen_whale_benchmark"
 export RAW_DATA_PATH="/share/klab/danthes/data/ArcticWhales_AADC"
 export OUTPUT_DIR="${BASE_DIR}/datasets"
 
 # Add custom_preprocessing to Python path
-export PYTHONPATH="${BASE_DIR}/custom_preprocessing:${PYTHONPATH}"
+export PYTHONPATH="${BASE_DIR}/src/custom_preprocessing:${PYTHONPATH}"
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
 # Run dataset preparation script
 cd "$BASE_DIR"
-python custom_preprocessing/prepare_dataset.py \
+python src/custom_preprocessing/prepare_dataset.py \
   --raw_data "$RAW_DATA_PATH" \
   --output "$OUTPUT_DIR" 

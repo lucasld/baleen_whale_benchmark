@@ -29,8 +29,8 @@ eval "$(conda shell.bash hook)"
 conda activate whale_env2
 
 # Set base paths
-export BASE_DIR="/share/klab/danthes/lliessduques/baleen_whale_benchmark/legacy/cnn"
-export CONFIG_PATH="${BASE_DIR}/config.json"
+export BASE_DIR="/share/klab/danthes/lliessduques/test/baleen_whale_benchmark"
+export CONFIG_PATH="${BASE_DIR}/src/config.json"
 export EVAL_OUTPUT_DIR="${BASE_DIR}/outputs/cnn_results/evaluation"
 
 # --- Script Logic ---
@@ -66,7 +66,7 @@ free -h
 # --- Step 1: Run test.py ---
 # This script generates confusion matrices and other test results from the trained model.
 echo "Running test.py..."
-python test.py --config "${CONFIG_PATH}" --model_folder "${MODEL_FOLDER}"
+python src/test.py --config "${CONFIG_PATH}" --model_folder "${MODEL_FOLDER}"
 
 # --- Step 2: Loop through all folds and run evaluation ---
 echo "Searching for evaluation input files in ${MODEL_FOLDER}..."
@@ -116,7 +116,7 @@ for PREDICTIONS_FILE in $PREDICTION_FILES; do
 
     # --- Step 3: Run evaluation.py ---
     echo "Running evaluation.py for this fold..."
-    python evaluation.py \
+    python src/evaluation.py \
         --predictions "${PREDICTIONS_FILE}" \
         --ground_truth "${GROUND_TRUTH_FILE}" \
         --label_list "${LABEL_LIST_FILE}" \

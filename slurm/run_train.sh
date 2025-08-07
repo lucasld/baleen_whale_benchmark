@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=02:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=64GB
@@ -18,8 +18,8 @@ eval "$(conda shell.bash hook)"
 conda activate whale_env2
 
 # Set paths
-export BASE_DIR="/share/klab/danthes/lliessduques/baleen_whale_benchmark/legacy/cnn"
-export CONFIG_PATH="${BASE_DIR}/config.json"
+export BASE_DIR="/share/klab/danthes/lliessduques/test/baleen_whale_benchmark"
+export CONFIG_PATH="${BASE_DIR}/src/config.json"
 
 # Go to the base directory
 cd "$BASE_DIR"
@@ -35,7 +35,7 @@ free -h
 # Run the training script by calling the run_from_config function directly.
 # This avoids the interactive input() in train.py's __main__ block.
 # Make sure the "DATA_DIR" in your config.json points to the correct spectrograms folder.
-python -c "import train; import pathlib; print('Starting training with config: ${CONFIG_PATH}'); train.run_from_config(pathlib.Path('${CONFIG_PATH}'))"
+python -c "import sys; sys.path.insert(0, 'src'); import train; import pathlib; print('Starting training with config: ${CONFIG_PATH}'); train.run_from_config(pathlib.Path('${CONFIG_PATH}'))"
 
 echo "Training job finished."
 

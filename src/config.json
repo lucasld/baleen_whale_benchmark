@@ -39,8 +39,8 @@
       "Dswp"
     ]
   },
-  "SAMPLES_PER_CLASS": 30000,
-  "comment_SAMPLES_PER_CLASS": "TODO: changed from 300 to 30000 since 30000 was said in the paper",
+  "SAMPLES_PER_CLASS": 100,
+  "comment_SAMPLES_PER_CLASS": "TODO: changed from 300 to 30000 since 30000 was said in the paper - for now 5000 for testing",
   "NOISE_RATIO": [
     0.25
   ],
