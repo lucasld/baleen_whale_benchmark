@@ -107,7 +107,9 @@ def main():
     # TODO: Merge the predictions and ground truth DataFrames on the 'path' column.
     # This ensures that each prediction is aligned with its corresponding ground truth label.
     merged_df = pd.merge(predictions_df, ground_truth_df, on='path')
-
+    # TODO: Sanity check merge alignment
+    if len(merged_df) != len(predictions_df):
+        raise ValueError(f"Merged rows ({len(merged_df)}) differ from predictions ({len(predictions_df)}). Check 'path' alignment.")
     # TODO: Extract the numpy arrays for labels (predictions) and true_coverage from the merged dataframe.
     # The columns with integer names ('0', '1', etc.) are the prediction probabilities.
     label_columns = [str(i) for i in range(len(label_list))]

@@ -55,11 +55,11 @@ def process_site(site_name, site_path, output_dir, file_tag_mapping):
             print(f"  Warning: File not found: {file_path}")
             continue
             
-        # Skip files marked for ignoring
+        # Convert _IGNORE to IGNORE class instead of skipping
         if tag == "_IGNORE":
-            print(f"  Skipping {file_name} (marked as _IGNORE)")
-            continue
-            
+            tag = "IGNORE"
+            print(f"  Including {file_name} with IGNORE tag")
+        
         site_tags.add(tag)
         
         try:

@@ -39,8 +39,8 @@
       "Dswp"
     ]
   },
-  "SAMPLES_PER_CLASS": 100,
-  "comment_SAMPLES_PER_CLASS": "TODO: changed from 300 to 30000 since 30000 was said in the paper - for now 5000 for testing",
+  "SAMPLES_PER_CLASS": 30000,
+  "comment_SAMPLES_PER_CLASS": "TODO: originally set to 300 - paper says 30000",
   "NOISE_RATIO": [
     0.25
   ],
@@ -54,6 +54,7 @@
   "BATCH_SIZE": 16,
   "_comment_BATCH_SIZE": "TODO: changed from 32 to 16 since 16 was said in the paper",
   "EPOCHS": 100,
+  "comment_EPOCHS": "TODO: originally set to 100 - paper says 100 - lowering for testing",
   "early_stop": 20,
   "monitoring_metric": "val_imbalanced_metric",
   "monitoring_direction": "max",

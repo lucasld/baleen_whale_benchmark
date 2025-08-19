@@ -159,11 +159,78 @@ class Model:
         # factor=0.2,patience=8, min_lr= min_learning_rate)
         history_cb = tf.keras.callbacks.CSVLogger(self.log_path.joinpath('logs.csv'), separator=',', append=False)
 
+        # TODO: Keras default verbose=1 prints per-batch progress lines that clutter Slurm logs; switch to per-epoch lines.
+        # history = self.model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs,
+        #                          validation_data=(x_valid, y_valid),
+        #                          callbacks=[early_stopping_cb, mdl_checkpoint_cb, history_cb],
+        #                          class_weight=class_weights_dict)
         history = self.model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs,
                                  validation_data=(x_valid, y_valid),
                                  callbacks=[early_stopping_cb, mdl_checkpoint_cb, history_cb],
-                                 class_weight=class_weights_dict)
+                                 class_weight=class_weights_dict,
+                                 verbose=2)
 
+        return history
+
+    def train_with_datasets(self, train_dataset, valid_dataset, y_train_labels, steps_per_epoch, validation_steps,
+                            epochs, loss_function, early_stop, monitoring_metric, monitoring_direction,
+                            class_weights, learning_rate):
+        """
+        TODO: New method to train using tf.data datasets to avoid full in-memory loads.
+        Keeps original `train` method intact for backward compatibility.
+        """
+        # compute the class weights
+        class_labels = np.unique(y_train_labels)
+        class_weights_vals = compute_class_weight(class_weights, classes=class_labels, y=y_train_labels)
+        class_weights_dict = {}
+        for label, weight in zip(class_labels, class_weights_vals):
+            class_weights_dict[label] = weight
+        print('used class weights:', class_weights_dict)
+
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=learning_rate,
+            decay_steps=steps_per_epoch * 10,
+            decay_rate=0.5)
+        opt = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+
+        if loss_function == 'custom_cross_entropy':
+            loss_function = custom_cross_entropy
+        self.model.compile(loss=loss_function,
+                           optimizer=opt,
+                           metrics=self.metrics,
+                           )
+
+        model_save_filename = self.log_path.joinpath('checkpoints.weights.h5')
+
+        early_stopping_cb = keras.callbacks.EarlyStopping(monitor=monitoring_metric, mode=monitoring_direction,
+                                                          patience=early_stop, restore_best_weights=True)
+        mdl_checkpoint_cb = keras.callbacks.ModelCheckpoint(model_save_filename, save_weights_only=True,
+                                                            monitor=monitoring_metric, save_best_only=True)
+        history_cb = tf.keras.callbacks.CSVLogger(self.log_path.joinpath('logs.csv'), separator=',', append=False)
+
+        # TODO: Keras default verbose=1 prints per-batch progress lines that clutter Slurm logs; switch to per-epoch lines.
+        # history = self.model.fit(train_dataset,
+        #                          epochs=epochs,
+        #                          steps_per_epoch=steps_per_epoch,
+        #                          validation_data=valid_dataset,
+        #                          validation_steps=validation_steps,
+        #                          callbacks=[early_stopping_cb, mdl_checkpoint_cb, history_cb],
+        #                          class_weight=class_weights_dict)
+        # TODO: Added concise training header with key metrics names once at start.
+        print(f"Metrics: {', '.join([m if isinstance(m, str) else (m.name if hasattr(m, 'name') else m.__name__) for m in self.model.metrics_names])}")
+        history = self.model.fit(train_dataset,
+                                 epochs=epochs,
+                                 steps_per_epoch=steps_per_epoch,
+                                 validation_data=valid_dataset,
+                                 validation_steps=validation_steps,
+                                 callbacks=[early_stopping_cb, mdl_checkpoint_cb, history_cb],
+                                 class_weight=class_weights_dict,
+                                 verbose=2)
+
+        # TODO: Added concise run footer summarizing key results for .out readability.
+        best_epoch = np.argmin(history.history['val_loss']) + 1 if 'val_loss' in history.history else None
+        if best_epoch is not None:
+            print(f"Best epoch (val_loss): {best_epoch} | val_loss: {history.history['val_loss'][best_epoch-1]:.4f}")
         return history
 
     def test(self, x_test, y_test, categories, images_to_test):
@@ -183,6 +250,43 @@ class Model:
 
         con_mat_df = pd.DataFrame(con_mat, index=categories, columns=categories)
         scores_df = pd.DataFrame([scores], columns=self.model.metrics_names)
+        return scores_df, con_mat_df, preds
+
+    def new_test(self, ds, data_split_df, batch_size=32):
+        """
+        Test the model using tf.data streaming approach for consistency with training.
+        
+        :param ds: SpectrogramDataSet instance
+        :param data_split_df: DataFrame with 'path' and 'set' columns
+        :param batch_size: batch size for testing
+        :return: scores_df (DataFrame), con_mat_df (DataFrame), preds (DataFrame)
+        """
+        # Create test dataset using streaming approach
+        test_ds = ds.create_tf_dataset(data_split_df, 'test', batch_size, shuffle=False)
+        
+        # Get test paths for images_to_test
+        test_paths = data_split_df.loc[data_split_df['set'] == 'test', 'path'].values
+        
+        # Evaluate using tf.data (gets proper metrics like original test method)
+        scores = self.model.evaluate(test_ds, verbose=0)
+        
+        # Get predictions
+        y_pred = self.model.predict(test_ds, verbose=0)
+        
+        # Get true labels for confusion matrix
+        y_test = ds.read_labels_from_file_list(test_paths)
+        
+        # Build predictions DataFrame (same format as original test method)
+        preds = pd.concat(
+            [pd.DataFrame(y_pred).reset_index(drop=True), 
+             pd.DataFrame(test_paths, columns=['path']).reset_index(drop=True)], axis=1)
+        
+        # Use existing confusion matrix method (since get_scores is missing)
+        con_mat_df = self.get_confusion_matrix(y_test, y_pred, categories=ds.int2class)
+        
+        # Build scores DataFrame (same format as original test method)
+        scores_df = pd.DataFrame([scores], columns=self.model.metrics_names)
+        
         return scores_df, con_mat_df, preds
 
     def save(self):

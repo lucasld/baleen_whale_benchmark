@@ -12,6 +12,7 @@ def test_multiple_models(mother_folder, ds):
     con_mat = pd.DataFrame()
     for folder in mother_folder.glob('*'):
         if folder.is_dir():  # TODO: Changed isdir() to is_dir() for pathlib compatibility
+            print(f'-- Testing model in folder: {folder} --')
             con_mat_i = training.test_model_from_folder(folder, ds)
             # TODO: Changed from `reset_index(names='label')` to a two-step reset and rename for backwards compatibility with older pandas versions.
             con_mat_i = con_mat_i.reset_index(drop=False)
@@ -48,5 +49,13 @@ if __name__ == '__main__':
                                             locations=config['LOCATIONS'],
                                             corrected=config['USE_CORRECTED_DATASET'],
                                             samples_per_class=config['SAMPLES_PER_CLASS'])
-
+    # inspect spectro_ds to see how many samples exist for each category
+    rows = []
+    for cls in spectro_ds.int2class:
+        paths = spectro_ds.select_files_category(cls, samples_to_load='all')
+        rows.append({'class': cls, 'n_samples': len(paths)})
+    print(pd.DataFrame(rows))
+    
+    # Test the models in the specified folder
+    print(f"Testing models in folder: {model_folder}")
     test_multiple_models(model_folder, spectro_ds)

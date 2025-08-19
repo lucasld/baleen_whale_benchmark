@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --time=01:00:00
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32GB
@@ -31,7 +31,7 @@ conda activate whale_env2
 # Set base paths
 export BASE_DIR="/share/klab/danthes/lliessduques/test/baleen_whale_benchmark"
 export CONFIG_PATH="${BASE_DIR}/src/config.json"
-export EVAL_OUTPUT_DIR="${BASE_DIR}/outputs/cnn_results/evaluation"
+# EVAL_OUTPUT_DIR will be set per-run after MODEL_FOLDER is known
 
 # --- Script Logic ---
 
@@ -56,6 +56,9 @@ fi
 
 echo "Using model folder: $MODEL_FOLDER"
 
+# Set evaluation output directory inside the specific run folder
+export EVAL_OUTPUT_DIR="${MODEL_FOLDER}/evaluation"
+
 # Create evaluation output directory if it doesn't exist
 mkdir -p "$EVAL_OUTPUT_DIR"
 
@@ -66,7 +69,7 @@ free -h
 # --- Step 1: Run test.py ---
 # This script generates confusion matrices and other test results from the trained model.
 echo "Running test.py..."
-python src/test.py --config "${CONFIG_PATH}" --model_folder "${MODEL_FOLDER}"
+python -u src/test.py --config "${CONFIG_PATH}" --model_folder "${MODEL_FOLDER}"
 
 # --- Step 2: Loop through all folds and run evaluation ---
 echo "Searching for evaluation input files in ${MODEL_FOLDER}..."
@@ -116,7 +119,7 @@ for PREDICTIONS_FILE in $PREDICTION_FILES; do
 
     # --- Step 3: Run evaluation.py ---
     echo "Running evaluation.py for this fold..."
-    python src/evaluation.py \
+    python -u src/evaluation.py \
         --predictions "${PREDICTIONS_FILE}" \
         --ground_truth "${GROUND_TRUTH_FILE}" \
         --label_list "${LABEL_LIST_FILE}" \

@@ -1,12 +1,13 @@
 import os
 import cv2
+import sys  # TODO: used to detect non-interactive environments (e.g., Slurm) and disable tqdm to reduce log noise
+import tensorflow as tf  # TODO: Added TensorFlow for tf.data pipeline to stream data without loading all into RAM
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 from sklearn.model_selection import StratifiedKFold
 from tqdm import tqdm
-import json
 
 # Seed to use when shuffling the dataset and the noise
 SHUFFLE_SEED = 42
@@ -283,8 +284,57 @@ class SpectrogramDataSet:
             selected_paths = self.select_files_category(category, samples_to_load, locations_to_exclude)
             total_paths += selected_paths
 
+        # TODO: This shuffle is unseeded (same as original). Runs may differ. Keep for fidelity; seed only if determinism required.
         total_paths = shuffle(total_paths)
         return total_paths
+
+    def create_tf_dataset(self, paths_df, partition, batch_size, shuffle=True):
+        """
+        TODO: New method (does not exist in original) to build a tf.data pipeline for on-demand image loading.
+        Keeps original in-memory loaders intact; this streams data efficiently with parallel I/O and prefetch.
+
+        :param paths_df: DataFrame with 'path' and 'set' columns
+        :param partition: 'train' | 'valid' | 'test'
+        :param batch_size: batch size for batching the dataset
+        :param shuffle: whether to shuffle (typically True for train, False for valid/test)
+        :return: tf.data.Dataset yielding (image, label)
+        """
+        # Extract file names for the chosen partition
+        paths_list = paths_df.loc[paths_df['set'] == partition, 'path'].values
+
+        # Build full absolute paths and corresponding integer labels using existing label parsing
+        # The class folder is derived from the filename (e.g., 1427_Location_Class.png -> 'Class')
+        full_paths = [os.path.join(self.data_dir, p.split('_')[2].split('.')[0], p) for p in paths_list]
+        labels = self.read_labels_from_file_list(paths_list)
+
+        def _load_and_preprocess(path, label):
+            # Read and decode as single-channel grayscale. If source is RGB, TF converts to one channel.
+            image_bytes = tf.io.read_file(path)
+            image = tf.image.decode_png(image_bytes, channels=1)
+            # TODO: Model expects (IMAGE_WIDTH, IMAGE_HEIGHT, 1) i.e., (30,90,1). Decoded PNG is (H,W,1)=(90,30,1).
+            # Transpose to match expected input.
+            image = tf.transpose(image, perm=[1, 0, 2])
+            image = tf.image.convert_image_dtype(image, dtype=tf.float32)  # [0,1]
+            # Ensure static shape matches model expectation (IMAGE_WIDTH, IMAGE_HEIGHT, 1)
+            image = tf.ensure_shape(image, [IMAGE_WIDTH, IMAGE_HEIGHT, 1])
+            return image, label
+
+        ds = tf.data.Dataset.from_tensor_slices((full_paths, labels))
+        # Parallel map decode + normalize
+        ds = ds.map(_load_and_preprocess, num_parallel_calls=tf.data.AUTOTUNE)
+
+        # TODO: Cache decoded tensors in memory so subsequent epochs don't re-read from disk.
+        # This keeps first-epoch I/O, then serves from RAM, reducing repeated shuffle-buffer stalls.
+        ds = ds.cache()
+
+        # New: shuffle only for training in the tf.data pipeline (no equivalent in original codebase)
+        if shuffle:
+            # TODO: Tuned shuffle buffer to balance randomness and startup latency
+            ds = ds.shuffle(buffer_size=min(2048, len(full_paths)))
+
+        ds = ds.batch(batch_size)
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+        return ds
 
     def read_labels_from_file_list(self, file_list):
         labels = []
@@ -302,14 +352,23 @@ class SpectrogramDataSet:
     def load_from_file_list(self, file_list):
         labels = []
         images = []
-        for img_name in tqdm(file_list, total=len(file_list)):
+        # TODO: original tqdm without Slurm-aware disabling was too verbose for sbatch logs
+        # for img_name in tqdm(file_list, total=len(file_list)):
+        for img_name in tqdm(
+                file_list,
+                total=len(file_list),
+                disable=(not sys.stdout.isatty()) or (os.environ.get('SLURM_JOB_ID') is not None),  # TODO: disable progress bar under sbatch
+                leave=False,
+                mininterval=5
+        ):
             category = img_name.split('_')[2].split('.')[0]
             joined_cat = self.map_join[category]
-
-            img_array = cv2.imread(os.path.join(self.data_dir, category, img_name))
-
-            grey_image = np.mean(img_array, axis=2)
-            images.append(grey_image)
+            # TODO: Switch to grayscale decode to avoid RGB decode + manual averaging; reduces I/O and CPU.
+            # img_array = cv2.imread(os.path.join(self.data_dir, category, img_name))
+            # grey_image = np.mean(img_array, axis=2)
+            # images.append(grey_image)
+            img_gray = cv2.imread(os.path.join(self.data_dir, category, img_name), cv2.IMREAD_GRAYSCALE)  # TODO(lucas): direct grayscale decode for efficiency
+            images.append(img_gray)  # TODO: already grayscale; no need to average channels
             # This part is for joined classes
             labels.append(self.classes2int[joined_cat])
 
@@ -373,7 +432,15 @@ class SpectrogramDataSet:
         labels = []
         images = []
 
-        for i, img_path in tqdm(enumerate(images_for_test), total=len(images_for_test)):
+        # TODO: original tqdm without Slurm-aware disabling was too verbose for sbatch logs
+        # for i, img_path in tqdm(enumerate(images_for_test), total=len(images_for_test)):
+        for i, img_path in tqdm(
+                enumerate(images_for_test),
+                total=len(images_for_test),
+                disable=(not sys.stdout.isatty()) or (os.environ.get('SLURM_JOB_ID') is not None),  # TODO: disable progress bar under sbatch
+                leave=False,
+                mininterval=5
+        ):
             if (i % batch_size == 0) and (i != 0):
                 x = self.reshape_images(images)
                 y = np.array(labels)
@@ -383,12 +450,13 @@ class SpectrogramDataSet:
                 yield x, y, self, images_for_test
 
             cat_folder = os.path.splitext(os.path.basename(img_path))[0].split('_')[2]
-            img_array = cv2.imread(os.path.join(self.data_dir, cat_folder, img_path))
+            # TODO: Switch to grayscale decode to avoid RGB decode + manual averaging during test batch loading.
+            # img_array = cv2.imread(os.path.join(self.data_dir, cat_folder, img_path))
 
             # Not necessary if images already on the correct format
             # resized_image = cv2.resize(img_array, (self.image_width, self.image_height))
-            grey_image = np.mean(img_array, axis=2)
-            images.append(grey_image)
+            img_gray = cv2.imread(os.path.join(self.data_dir, cat_folder, img_path), cv2.IMREAD_GRAYSCALE)  # TODO(lucas): direct grayscale decode for efficiency
+            images.append(img_gray)  # TODO: already grayscale; no need to average channels
 
             # This part is for joined classes
             labels.append(self.classes2int[self.map_join[cat_folder]])

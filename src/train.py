@@ -24,6 +24,11 @@ def run_from_config(config_path, log_path=None):
     # Read the config file
     f = open(config_path)
     config = json.load(f)
+    # TODO: Print full run configuration at start for Slurm logs to make runs comparable.
+    # print('Starting training with config:', config_path)  # original single-line indicator
+    print('===== RUN CONFIG START =====')
+    print(json.dumps(config, indent=2, sort_keys=True))
+    print('===== RUN CONFIG END =====')
 
     if config['USE_CORRECTED_DATASET'] and config['SAMPLES_PER_CLASS'] > dataset.CORRECTED_SAMPLES:
         raise Exception('The SAMPLES_PER_CLASS parameter (%s) is greater than the corrected samples (%s). '

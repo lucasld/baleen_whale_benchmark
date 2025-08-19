@@ -3,13 +3,33 @@ import os
 import pathlib
 import numpy as np
 import json
-from PIL import Image
+from PIL import Image, ImageDraw
 import argparse
 import glob
 import re # Import regex module
 
+# Import YOLO utilities
+from yolo_utils import (
+    load_annotations_for_wav,
+    create_class_to_idx_mapping,
+    generate_yolo_labels_for_clip,
+    clip_and_normalize_boxes,
+    generate_preview_with_annotations
+)
 
-def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, clips_output_dir, class_counters, expected_classes=None):
+
+
+def generate_spectrograms_for_site(site_output_dir,
+                                   spectrograms_output_dir,
+                                   clips_output_dir,
+                                   class_counters,
+                                   expected_classes=None,
+                                   annotations_output_dir=None,
+                                   save_yolo_labels=False,
+                                   yolo_labels_dir=None,
+                                   preview_stride=0,
+                                   preview_dir=None,
+                                   max_noise_samples_per_site=10_000):
     """
     Generates spectrograms from Koogu-processed data (.npz files) for a specific site.
     Organizes output by class folders and uses shared counters.
@@ -86,9 +106,19 @@ def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, cli
     
     print(f"Found {len(npz_files)} .npz files and {len(label_list)} classes for site {site_name}")
     
+    # NEW: Calculate noise samples per file for equal distribution
+    num_files = len(npz_files)
+    if num_files > 0:
+        noise_samples_per_file = max_noise_samples_per_site // num_files
+        remaining_noise_samples = max_noise_samples_per_site % num_files
+        print(f"  Will take {noise_samples_per_file} noise samples per file ({num_files} files), with {remaining_noise_samples} extra distributed to first files")
+    else:
+        noise_samples_per_file = 0
+        remaining_noise_samples = 0
+    
     # Validate class names if expected_classes is provided
     if expected_classes:
-        unknown_classes = [c for c in label_list if c not in expected_classes and c != 'Noise']
+        unknown_classes = [c for c in label_list if c not in expected_classes and c not in ['Noise', 'IGNORE']]
         if unknown_classes:
              # Raise an error instead of asking for input
             error_message = (
@@ -106,15 +136,48 @@ def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, cli
             class_counters[class_name] = 0 
             print(f"Initializing counter for new class: {class_name}")
 
+    # Setup YOLO-related components if needed
+    class_to_idx = create_class_to_idx_mapping(expected_classes) if expected_classes else {}
+    
+    # Prepare directories for YOLO and preview if requested
+    yolo_site_dir = None
+    preview_site_dir = None
+    
+    if save_yolo_labels and yolo_labels_dir:
+        yolo_site_dir = os.path.join(yolo_labels_dir, site_name)
+        os.makedirs(yolo_site_dir, exist_ok=True)
+
+    if preview_stride and preview_stride > 0 and preview_dir:
+        preview_site_dir = os.path.join(preview_dir, site_name)
+        os.makedirs(preview_site_dir, exist_ok=True)
+        print(f"  DEBUG: Preview enabled - stride={preview_stride}, dir={preview_site_dir}")
+    else:
+        print(f"  DEBUG: Preview disabled - stride={preview_stride}, dir={preview_dir}")
+    
+    # Track site-specific Noise sample count
+    site_noise_count = 0
+    # Track site-specific IGNORE sample count  
+    site_ignore_count = 0
+    
     # Process each .npz file (each corresponds to an original audio file)
-    for zipped_location in npz_files:
+    for file_idx, zipped_location in enumerate(npz_files):
         print(f"  Processing Koogu file: {os.path.basename(zipped_location)}")
+        
+        # Calculate noise limit for this specific file
+        file_noise_limit = noise_samples_per_file
+        if file_idx < remaining_noise_samples:
+            file_noise_limit += 1  # Distribute remainder to first few files
+        
+        file_noise_count = 0  # Track noise samples for this file
         
         # Load the data
         try:
             data = np.load(zipped_location)
             wavs = data['clips']
             labels = data['labels']
+            # New: use Koogu timing metadata for exact clip start times
+            fs_npz = float(data['fs']) if 'fs' in data.files else audio_settings['desired_fs']
+            clip_offsets = data['clip_offsets'] if 'clip_offsets' in data.files else None  # samples from WAV start
         except Exception as e:
             print(f"  Error loading data from {zipped_location}: {e}")
             continue # Skip this file
@@ -141,12 +204,22 @@ def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, cli
             except Exception as e:
                  print(f"  Warning: Could not save questionable labels to {csv_path}: {e}")
         
+        # Load annotations for this WAV if available
+        ann_df = load_annotations_for_wav(filename_base, annotations_output_dir, site_name)
+
+        # Shuffle indices to randomize processing order for better noise distribution
+        num_clips = len(wavs)
+        shuffled_indices = np.arange(num_clips)
+        np.random.shuffle(shuffled_indices)
+
         # Process each clip (wav) in the file
         clips_processed_count = 0
-        for x, wav in enumerate(wavs):
+        saved_count_for_preview = 0
+        for clip_idx in shuffled_indices:
             try:
+                wav = wavs[clip_idx]
                 # Create label for clip
-                label = labels[x, :]
+                label = labels[clip_idx, :]
                 
                 # Handle multi-class case (one-hot encoding)
                 if label.shape[0] == len(label_list):
@@ -154,9 +227,9 @@ def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, cli
                     label = label.astype(int)
                     # Find which classes this clip belongs to
                     class_indices = np.where(label == 1)[0]
-                    
+                    # print(class_indices, label)
                     if len(class_indices) == 0:
-                        # print(f"  Warning: Clip {x} in {filename} has no classes assigned") # Less verbose
+                        # print(f"  Warning: Clip {clip_idx} in {filename} has no classes assigned") # Less verbose
                         continue
                     
                     # Select a random class if multiple are assigned
@@ -165,6 +238,10 @@ def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, cli
                     idx = np.random.randint(len(class_indices))
                     selected_class_idx = class_indices[idx]
                     CLASSNAME = label_list[selected_class_idx]
+                    
+                    # Skip if the selected class is IGNORE
+                    if CLASSNAME == 'IGNORE':
+                        continue
                 else:
                     # Simple case: direct class index (assuming single label per clip)
                     # Ensure the index is valid
@@ -172,33 +249,53 @@ def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, cli
                     if 0 <= label_idx < len(label_list):
                          CLASSNAME = label_list[label_idx]
                     else:
-                         print(f"  Warning: Clip {x} in {filename} has invalid label index {label_idx}")
+                         print(f"  Warning: Clip {clip_idx} in {filename} has invalid label index {label_idx}")
                          continue
                     
-                # Calculate clip times
-                ID = x
-                STARTTIMES = int(x * audio_settings['clip_advance'] * 1000)
-                ENDTIMES = int(STARTTIMES + audio_settings['clip_length'] * 1000)
+                # EARLY EXIT: Skip IGNORE samples - these are the calls we want to exclude
+                if CLASSNAME == 'IGNORE':
+                    site_ignore_count += 1  # Count ignored samples for reporting
+                    continue  # Skip this clip entirely
+                    
+                # EARLY EXIT: Skip Noise samples if we've reached the limit for this file
+                if CLASSNAME == 'Noise' and file_noise_count >= file_noise_limit:
+                    continue  # Skip this clip entirely
                 
-                # Create label for clip file - Use filename_base (e.g., "20150510_100000")
-                clip_label = f"{CLASSNAME}-_{ID}_{site_year}_{filename_base}_{STARTTIMES}_{ENDTIMES}.wav"
+                # Calculate clip times
+                ID = clip_idx
+                # Use Koogu-provided clip start offsets when available
+                if clip_offsets is not None:
+                    clip_start_s = float(clip_offsets[clip_idx]) / fs_npz
+                else:
+                    # Fallback to grid if offsets unavailable
+                    clip_start_s = float(clip_idx) * audio_settings['clip_advance']
+                clip_end_s = clip_start_s + audio_settings['clip_length']
+                STARTTIMES = int(round(clip_start_s * 1000.0))
+                ENDTIMES = int(round(clip_end_s * 1000.0))
                 
                 # Count this class occurrence for the spectrogram ID (needs to be unique per class)
                 class_counters[CLASSNAME] += 1
+                # Track site-specific Noise count
+                if CLASSNAME == 'Noise':
+                    site_noise_count += 1
+                    file_noise_count += 1
+                # Create spectrogram label - Use class counter to ensure unique ID
                 spec_ID = class_counters[CLASSNAME]
-                
-                # Create label for spectrogram matching the expected format: n_locationyear_class.png
                 spec_label = f"{spec_ID}_{location_year}_{CLASSNAME}.png"
+
+                # Create label for clip file - Use filename_base (e.g., "20150510_100000")
+                # clip_label = f"{CLASSNAME}-_{ID}_{site_year}_{filename_base}_{STARTTIMES}_{ENDTIMES}.wav"
                 
                 # Filter wav (bandpass filter exactly as in original script)
                 sos = scipy.signal.iirfilter(20, spec_settings['bandwidth_clip'], rp=None, rs=None, 
                                              btype='band', analog=False, ftype='butter', 
                                              output='sos', fs=audio_settings['desired_fs'])
                 filtered_wav = scipy.signal.sosfilt(sos, wav)
-                
+                """
                 # Save clip
                 clip_path = os.path.join(site_clips_dir, clip_label)
                 scipy.io.wavfile.write(clip_path, audio_settings['desired_fs'], filtered_wav)
+                """
                 
                 # Create and save spectrogram using exactly the same parameters
                 f, t, Sxx = scipy.signal.spectrogram(
@@ -225,21 +322,68 @@ def generate_spectrograms_for_site(site_output_dir, spectrograms_output_dir, cli
                 im = im.resize((30, 90), Image.Resampling.LANCZOS)
                 
                 # Save spectrogram to the appropriate class directory
-                spec_path = os.path.join(spectrograms_output_dir, CLASSNAME, spec_label)
+                spec_dir = os.path.join(spectrograms_output_dir, CLASSNAME)
+                os.makedirs(spec_dir, exist_ok=True)
+                spec_path = os.path.join(spec_dir, spec_label)
                 im.save(spec_path)
+
+                # Generate YOLO labels and preview if requested
+                boxes = []
+                if (save_yolo_labels or preview_stride > 0) and ann_df is not None and expected_classes:
+                    if save_yolo_labels and yolo_site_dir:
+                        boxes = generate_yolo_labels_for_clip(
+                            spec_label, ann_df, clip_start_s, clip_end_s,
+                            audio_settings, class_to_idx, yolo_site_dir
+                        )
+
+                # Optional: preview overlays every N-th spectrogram saved
+                if preview_stride and preview_stride > 0 and preview_site_dir:
+                    saved_count_for_preview += 1
+                    if saved_count_for_preview % preview_stride == 0:
+                        print(f"  DEBUG: Generating preview {saved_count_for_preview} (stride={preview_stride}) for {spec_label}")
+                        # Get boxes if not already generated
+                        if not boxes and ann_df is not None and expected_classes:
+                            boxes = clip_and_normalize_boxes(
+                                ann_df, clip_start_s, clip_end_s, 30, 90, 
+                                audio_settings, class_to_idx
+                            )
+                        try:
+                            generate_preview_with_annotations(im, spec_label, boxes, preview_site_dir)
+                            print(f"  DEBUG: Successfully generated preview for {spec_label}")
+                        except Exception as preview_error:
+                            print(f"  ERROR: Failed to generate preview for {spec_label}: {preview_error}")
+                elif preview_stride and preview_stride > 0:
+                    if not preview_site_dir:
+                        print(f"  DEBUG: Preview requested but preview_site_dir is None")
+                    elif ann_df is None:
+                        print(f"  DEBUG: Preview requested but ann_df is None") 
+                    elif not expected_classes:
+                        print(f"  DEBUG: Preview requested but expected_classes is None/empty")
+                        
                 clips_processed_count += 1
                 
             except Exception as clip_error:
-                print(f"  Error processing clip {x} from {filename}: {clip_error}")
+                print(f"  Error processing clip {clip_idx} from {filename}: {clip_error}")
                 # Continue to the next clip
         
-        print(f"  Completed processing {clips_processed_count}/{len(wavs)} clips from {os.path.basename(zipped_location)}")
+        print(f"  Completed processing {clips_processed_count}/{len(wavs)} clips from {os.path.basename(zipped_location)} (took {file_noise_count}/{file_noise_limit} noise samples)")
         
     print(f"--- Finished Spectrogram Generation for Site: {site_name} ---")
+    print(f"Class counts after processing {site_name}: {class_counters}")
+    print(f"Skipped {site_ignore_count} IGNORE samples for site {site_name}")
     return True
 
 # Define a new function to orchestrate spectrogram generation for all sites
-def run_spectrogram_generation(koogu_output_dir, spectrograms_output_dir, clips_output_dir, config_path=None, site_to_process=None):
+def run_spectrogram_generation(koogu_output_dir,
+                               spectrograms_output_dir,
+                               clips_output_dir,
+                               config_path=None,
+                               site_to_process=None,
+                               annotations_output_dir=None,
+                               save_yolo_labels=False,
+                               yolo_labels_dir=None,
+                               preview_stride=0,
+                               preview_dir=None):
     """Finds all site outputs from Koogu and generates spectrograms."""
     print(f"Starting spectrogram generation.")
     print(f"Koogu input source: {koogu_output_dir}")
@@ -296,9 +440,14 @@ def run_spectrogram_generation(koogu_output_dir, spectrograms_output_dir, clips_
         site_name = os.path.basename(site_dir)
         try:
             success = generate_spectrograms_for_site(
-                 site_dir, spectrograms_output_dir, clips_output_dir, 
+                 site_dir, spectrograms_output_dir, clips_output_dir,
                  class_counters, # Pass the shared counter dict
-                 expected_classes
+                 expected_classes,
+                 annotations_output_dir=annotations_output_dir,
+                 save_yolo_labels=save_yolo_labels,
+                 yolo_labels_dir=yolo_labels_dir,
+                 preview_stride=preview_stride,
+                 preview_dir=preview_dir
             )
             if not success:
                  failed_sites.append(site_name)

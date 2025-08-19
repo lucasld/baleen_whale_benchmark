@@ -39,7 +39,10 @@ def apply_tag_mapping(tags_str, tag_mapping):
         tag = tag.strip()
         if tag in tag_mapping:
             mapped_tag = tag_mapping[tag]
-            if mapped_tag != '_IGNORE':
+            # Convert _IGNORE to IGNORE instead of filtering out
+            if mapped_tag == '_IGNORE':
+                result_tags.append('IGNORE')
+            else:
                 result_tags.append(mapped_tag)
         else:
             # Keep unmapped tags as is
@@ -121,16 +124,6 @@ def process_site(site_path, base_annotations_dir, base_output_dir, site_config=N
         all_annotations_df['Original_Tags'] = all_annotations_df['Tags']  # Preserve original tags
         all_annotations_df['Tags'] = all_annotations_df['Tags'].apply(lambda x: apply_tag_mapping(x, tag_mapping))
         
-        # Find rows where all tags were ignored (now empty) and remove them
-        empty_tags_mask = all_annotations_df['Tags'].apply(lambda x: pd.isna(x) or x == '')
-        if empty_tags_mask.any():
-            ignored_count = empty_tags_mask.sum()
-            print(f"Removing {ignored_count} annotations where all tags were marked to be ignored.")
-            all_annotations_df = all_annotations_df[~empty_tags_mask]
-            if all_annotations_df.empty:
-                print("All annotations were ignored after tag mapping. Skipping site.")
-                return False
-        
         # Collect tag information for reporting
         for tags_str in all_annotations_df['Original_Tags']:
             if pd.notna(tags_str):
@@ -152,7 +145,7 @@ def process_site(site_path, base_annotations_dir, base_output_dir, site_config=N
     
     # Validate class tags against expected categories if provided
     if expected_categories:
-        unknown_tags = [tag for tag in mapped_tags if tag not in expected_categories and tag != 'Noise']
+        unknown_tags = [tag for tag in mapped_tags if tag not in expected_categories and tag not in ['Noise', 'IGNORE']]
         if unknown_tags:
             # Raise an error as some mapped tags still don't match expected categories
             error_message = (
@@ -189,7 +182,7 @@ def process_site(site_path, base_annotations_dir, base_output_dir, site_config=N
             missing_wav_files.append(wav_file)
             print(f"DEBUG: Missing file '{wav_file}' -> looking for '{normalized_ref}'")
         else:
-            print(f"DEBUG: Found match for '{wav_file}' -> '{actual_wav_files_map[normalized_ref]}'")
+            # print(f"DEBUG: Found match for '{wav_file}' -> '{actual_wav_files_map[normalized_ref]}'")
             if len(missing_wav_files) == 0:  # Only show first few matches to avoid spam
                 continue
             break
@@ -268,7 +261,7 @@ def process_site(site_path, base_annotations_dir, base_output_dir, site_config=N
             seltab_root=site_annotations_dir,
             output_root=site_output_dir,
             ignore_zero_annot_files=0,
-            negative_class_label=None,
+            negative_class_label='Noise',
             attempt_salvage=True
         )
         print(f"Koogu processing complete for {site_name}.")

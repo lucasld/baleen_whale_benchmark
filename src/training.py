@@ -19,15 +19,44 @@ def create_and_train_model(save_path, paths_df, ds, config, model_name):
     m = model.Model(save_path=save_path, categories=config['CATEGORIES'], model_name=model_name)
 
     m.create(n_classes=ds.n_classes, batch_size=config['BATCH_SIZE'])
+    # TODO: Switched to tf.data streaming to avoid loading entire datasets into memory; original code below kept for reference.
+    # x_train, y_train = ds.load_set_from_df(paths_df, 'train')
+    # x_valid, y_valid = ds.load_set_from_df(paths_df, 'valid')
+    # history = m.train(x_train, y_train, x_valid, y_valid, batch_size=config['BATCH_SIZE'], epochs=config['EPOCHS'],
+    #                   loss_function=config['loss_function'], early_stop=config['early_stop'],
+    #                   monitoring_metric=config['monitoring_metric'],
+    #                   monitoring_direction=config['monitoring_direction'],
+    #                   class_weights=config['CLASS_WEIGHTS'], learning_rate=config['learning_rate'])
 
-    x_train, y_train = ds.load_set_from_df(paths_df, 'train')
-    x_valid, y_valid = ds.load_set_from_df(paths_df, 'valid')
+    # Build streaming datasets
+    train_ds = ds.create_tf_dataset(paths_df, 'train', config['BATCH_SIZE'], shuffle=True)  # TODO: use tf.data to stream training batches
+    valid_ds = ds.create_tf_dataset(paths_df, 'valid', config['BATCH_SIZE'], shuffle=False)  # TODO: stream validation batches
 
-    history = m.train(x_train, y_train, x_valid, y_valid, batch_size=config['BATCH_SIZE'], epochs=config['EPOCHS'],
-                      loss_function=config['loss_function'], early_stop=config['early_stop'],
-                      monitoring_metric=config['monitoring_metric'],
-                      monitoring_direction=config['monitoring_direction'],
-                      class_weights=config['CLASS_WEIGHTS'], learning_rate=config['learning_rate'])
+    # Compute labels and step counts without loading images
+    train_paths = paths_df.loc[paths_df['set'] == 'train', 'path'].values  # TODO: derive labels for class weights only
+    valid_paths = paths_df.loc[paths_df['set'] == 'valid', 'path'].values
+    y_train = ds.read_labels_from_file_list(train_paths)  # TODO: compute class weights from labels
+
+    steps_per_epoch = int((len(train_paths) + config['BATCH_SIZE'] - 1) / config['BATCH_SIZE'])  # TODO: steps for dataset-based training
+    validation_steps = int((len(valid_paths) + config['BATCH_SIZE'] - 1) / config['BATCH_SIZE'])
+
+    # TODO: Added concise run header for this model to improve .out readability (sizes and steps).
+    print(f"Train samples: {len(train_paths)}, Valid samples: {len(valid_paths)}, Batch size: {config['BATCH_SIZE']}, Steps/epoch: {steps_per_epoch}, Val steps: {validation_steps}")
+
+    history = m.train_with_datasets(
+        train_dataset=train_ds,
+        valid_dataset=valid_ds,
+        y_train_labels=y_train,
+        steps_per_epoch=steps_per_epoch,
+        validation_steps=validation_steps,
+        epochs=config['EPOCHS'],
+        loss_function=config['loss_function'],
+        early_stop=config['early_stop'],
+        monitoring_metric=config['monitoring_metric'],
+        monitoring_direction=config['monitoring_direction'],
+        class_weights=config['CLASS_WEIGHTS'],
+        learning_rate=config['learning_rate']
+    )
     m.plot_training_metrics(history, chosen_metric=config['monitoring_metric'])
     m.save()
     paths_df.to_csv(m.log_path.joinpath('data_used_%s.csv' % model_name))
@@ -54,6 +83,8 @@ def run_multiple_models(log_path, paths_df, config, fold, ds, perform_test=False
         model_name = 'fold_%s_noise_%s' % (fold, noise)
         paths_df1, noise = select_more_noise(paths_df, 'train', noise_before, noise, config, ds)
         paths_df2, noise = select_more_noise(paths_df1, 'valid', noise_before, noise, config, ds)
+        # TODO: Added concise fold header to mark start of a model run with key parameters.
+        print(f"=== Model: {model_name} | Fold: {fold} | Noise train: {noise} ===")
         cnn_model = create_and_train_model(log_path, paths_df2, ds, config, model_name=model_name)
         if perform_test:
             scores_i, con_mat_i = test_model_multiple_noise(cnn_model, paths_df, config, ds, fold, log_path)
@@ -75,7 +106,7 @@ def test_model_multiple_noise(cnn_model, paths_df, config, ds, fold, log_path):
     for noise_test in noise_to_test:
         paths_df, train_noise = select_more_noise(paths_df, 'test', last_noise, noise_test, config, ds)
         last_noise = noise_test
-        scores_noise, con_mat_noise, predictions = cnn_model.test_in_batches(ds, data_split_df=paths_df)
+        scores_noise, con_mat_noise, predictions = cnn_model.new_test(ds, data_split_df=paths_df)
 
         model.plot_confusion_matrix(con_mat_noise, log_path.joinpath('confusion_matrix_fold%s_noise%s_noise%s.png' %
                                                                      (fold, train_noise, noise_test)))
@@ -95,12 +126,22 @@ def test_model_multiple_noise(cnn_model, paths_df, config, ds, fold, log_path):
 
 
 def test_model_from_folder(folder_path, ds):
+    print("Loading model...")
+    print("    model_name: ", folder_path.name)
+    print("    save_path: ", folder_path.parent)
+    print("    categories: ", ds.categories)
     m = model.Model(save_path=folder_path.parent, categories=ds.categories, model_name=folder_path.name)
     m.load_existing()
+    print("Model loaded successfully. ")
     csv_split_file = m.log_path.joinpath('data_used_%s.csv' % m.model_name)
-    # TODO: Load data from csv before calling test_in_batches, which expects a DataFrame, not a path.
+    # Original (non-existent in our Model API):
+    # con_mat = m.predict_full_ds(ds, csv_split_file)
+    # TODO: Use existing batch tester; it expects a DataFrame
     data_split_df = pd.read_csv(csv_split_file)
-    _, con_mat, _ = m.test_in_batches(ds, data_split_df)
+    print("Testing model...")
+    # _, con_mat, _ = m.test_in_batches(ds, data_split_df)
+    _, con_mat, _ = m.new_test(ds, data_split_df)
+
     return con_mat
 
 

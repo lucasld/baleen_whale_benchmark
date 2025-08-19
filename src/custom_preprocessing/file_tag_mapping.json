@@ -12,7 +12,7 @@
         "Balleny2015.BpHigherCall.selections.txt": "_IGNORE",
         "Balleny2015.humpback.selections.txt": "_IGNORE",
         "Balleny2015.minke.selections.txt": "_IGNORE",
-        "Balleny2015.unid.selections.txt": "Noise"
+        "Balleny2015.unid.selections.txt": "_IGNORE"
     },
     "casey2014": {
         "Casey2014.Bm.Ant-A.selections.txt": "A",
@@ -22,7 +22,7 @@
         "Casey2014.Bp.20Hz.selections.txt": "20Hz",
         "Casey2014.Bp.20Plus.selections.txt": "20Plus",
         "Casey2014.Bp.Downsweep.selections.txt": "Dswp",
-        "Casey2014.Unidentified.calls.selections.txt": "Noise"
+        "Casey2014.Unidentified.calls.selections.txt": "_IGNORE"
     },
     "casey2017": {
         "Casey2017.Bm.Ant-A.selections.txt": "A",
@@ -32,7 +32,7 @@
         "Casey2017.Bp.20Hz.selections.txt": "20Hz",
         "Casey2017.Bp.20Plus.selections.txt": "20Plus",
         "Casey2017.Bp.Downsweep.selections.txt": "Dswp",
-        "Casey2017.Unidentified.calls.selections.txt": "Noise"
+        "Casey2017.Unidentified.calls.selections.txt": "_IGNORE"
     },
     "ElephantIsland2013Aural": {
         "AWI2013_AU0231.Bm.Ant-A..selections.txt": "A",
@@ -46,7 +46,7 @@
         "AWI2013_AU0231.MinkeBio.selections.txt": "_IGNORE",
         "AWI2013_AU0231.MinkeDS.selections.txt": "_IGNORE",
         "AWI2013_AU0231.Tonal30Hz.txt": "_IGNORE",
-        "AWI2013_AU0231.Unidentified.calls.selection.txt": "Noise"
+        "AWI2013_AU0231.Unidentified.calls.selection.txt": "_IGNORE"
     },
     "ElephantIsland2014": {
         "Bm_Ant-A.txt": "A",
@@ -56,7 +56,7 @@
         "Bp_20Hz.txt": "20Hz",
         "Bp_20Plus.txt": "20Plus",
         "Bp_Dswp.txt": "Dswp",
-        "Unknown_calls.txt": "Noise",
+        "Unknown_calls.txt": "_IGNORE",
         "recurrent_unknow_pulses.selections.txt": "_IGNORE",
         "backbeats.txt": "_IGNORE"
     },
@@ -68,7 +68,7 @@
         "AWI2015.Fin.20Hz.selections.txt": "20Hz",
         "AWI2015.Fin.20Plus.selections.txt": "20Plus",
         "AWI2015.Fin.DS.selections.txt": "Dswp",
-        "AWI2015.Unidentified.calls.selections.txt": "Noise"
+        "AWI2015.Unidentified.calls.selections.txt": "_IGNORE"
     },
     "kerguelen2005": {
         "Kerguelen2005.Bm.Ant-A.selections.txt": "A",
@@ -79,7 +79,7 @@
         "Kerguelen2005.Fin.20Plus.selections.txt": "20Plus",
         "Kerguelen2005.Fin.DS.selections.txt": "Dswp",
         "Kerguelen2005.MinkeDS.selections.txt": "_IGNORE",
-        "Kerguelen2005.Unidentified.calls..selections.txt": "Noise"
+        "Kerguelen2005.Unidentified.calls..selections.txt": "_IGNORE"
     },
     "kerguelen2014": {
         "Kerguelen2014.Bm.Ant-A.selections.txt": "A",
@@ -89,7 +89,7 @@
         "Kerguelen2014.Bp.20Hz.selections.txt": "20Hz",
         "Kerguelen2014.Bp.20Plus.selections.txt": "20Plus",
         "Kerguelen2014.Bp.Downsweep.selections.txt": "Dswp",
-        "Kerguelen2014.Unidentified.calls.selections.txt": "Noise"
+        "Kerguelen2014.Unidentified.calls.selections.txt": "_IGNORE"
     },
     "kerguelen2015": {
         "Kerguelen2015.Bm.Ant-A.selections.txt": "A",
@@ -100,7 +100,7 @@
         "Kerguelen2015.Fin.20Plus.selections.txt": "20Plus",
         "Kerguelen2015.Fin.DS.selections.txt": "Dswp",
         "Kerguelen2015.MinkeDS.selections.txt": "_IGNORE",
-        "Kerguelen2015.Unidentified.calls.selections.txt": "Noise"
+        "Kerguelen2015.Unidentified.calls.selections.txt": "_IGNORE"
     },
     "MaudRise2014": {
         "MaudRise2014_Bm_Ant-A.txt": "A",
@@ -113,7 +113,7 @@
         "MaudRise2014_Bp-Downsweep.txt": "Dswp",
         "MaudRise2014_Minke_BioduckAndDownsweeps.txt": "_IGNORE",
         "MaudRise2014_SWI.txt": "_IGNORE",
-        "MaudRise2014_Unidentified.txt": "Noise"
+        "MaudRise2014_Unidentified.txt": "_IGNORE"
     },
     "RossSea2014": {
         "RossSea2014.Bm.Ant-A.selections.txt": "A",
@@ -123,6 +123,6 @@
         "RossSea2014.Bp.20Hz.selections.txt": "20Hz",
         "RossSea2014.Bp.20Plus.selections.txt": "20Plus",
         "RossSea2014.Bp.DS.selections.txt": "Dswp",
-        "RossSea2014.unid.selections.txt": "Noise"
+        "RossSea2014.unid.selections.txt": "_IGNORE"
     }
 }
