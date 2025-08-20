@@ -18,7 +18,9 @@ def create_and_train_model(save_path, paths_df, ds, config, model_name):
     print(config['CATEGORIES'])
     m = model.Model(save_path=save_path, categories=config['CATEGORIES'], model_name=model_name)
 
-    m.create(n_classes=ds.n_classes, batch_size=config['BATCH_SIZE'])
+    # Use model architecture from config, fallback to IdilCNN if not specified
+    model_architecture = config.get('model_name', 'IdilCNN')
+    m.create(n_classes=ds.n_classes, batch_size=config['BATCH_SIZE'], model_architecture=model_architecture)
     # TODO: Switched to tf.data streaming to avoid loading entire datasets into memory; original code below kept for reference.
     # x_train, y_train = ds.load_set_from_df(paths_df, 'train')
     # x_valid, y_valid = ds.load_set_from_df(paths_df, 'valid')

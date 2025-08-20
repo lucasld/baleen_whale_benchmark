@@ -1,5 +1,5 @@
 {
-  "DATA_DIR": "datasets/preprocessed_dataset/spectrograms",
+  "DATA_DIR": "datasets/preprocessed_dataset_new4/spectrograms",
   "OUTPUT_DIR": "outputs/cnn_results",
   "LOCATIONS": [
     "BallenyIslands2015",
@@ -51,7 +51,7 @@
   "VALID_SPLIT": 0.3,
   "TEST_SPLIT": "blocked",
   "model_name": "IdilCNN",
-  "BATCH_SIZE": 16,
+  "BATCH_SIZE": 32,
   "_comment_BATCH_SIZE": "TODO: changed from 32 to 16 since 16 was said in the paper",
   "EPOCHS": 100,
   "comment_EPOCHS": "TODO: originally set to 100 - paper says 100 - lowering for testing",

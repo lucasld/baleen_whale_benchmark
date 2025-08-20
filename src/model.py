@@ -20,6 +20,7 @@ from PIL import ImageFont
 import dataset
 import metrics
 from custom_loss_function import custom_cross_entropy
+from models import build_model_architecture, get_available_models
 
 
 class Model:
@@ -57,41 +58,52 @@ class Model:
         # Model still to be created or loaded
         self.model = None
 
-    def create(self, n_classes, batch_size):
+    def create(self, n_classes, batch_size, model_architecture="IdilCNN"):
         """
         Create the model. Stores a summary of the model in the log_path, called model_summary.txt
         :param n_classes: number of classes
         :param batch_size: int, batch size
+        :param model_architecture: string, architecture name (e.g., "IdilCNN", "SimpleCNN", "ResNet50")
         :return: created model
         """
-        model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Conv2D(batch_size, kernel_size=(3, 3), activation='relu', padding="same",
-                                         kernel_initializer='he_normal', input_shape=(dataset.IMAGE_WIDTH,
-                                                                                      dataset.IMAGE_HEIGHT, 1)))
+        try:
+            # Use the model factory to build the specified architecture
+            model = build_model_architecture(model_architecture, n_classes, batch_size)
+        except ValueError as e:
+            # If architecture not found, fall back to original IdilCNN and show available options
+            print(f"Error: {e}")
+            print(f"Falling back to original IdilCNN architecture.")
+            print(f"Available architectures: {get_available_models()}")
+            
+            # Original IdilCNN implementation as fallback
+            model = tf.keras.models.Sequential()
+            model.add(tf.keras.layers.Conv2D(batch_size, kernel_size=(3, 3), activation='relu', padding="same",
+                                             kernel_initializer='he_normal', input_shape=(dataset.IMAGE_WIDTH,
+                                                                                          dataset.IMAGE_HEIGHT, 1)))
 
-        model.add(tf.keras.layers.BatchNormalization())
+            model.add(tf.keras.layers.BatchNormalization())
 
-        model.add(tf.keras.layers.Conv2D(batch_size, kernel_size=(3, 3), activation='relu'))
-        model.add(tf.keras.layers.BatchNormalization())
-        model.add(tf.keras.layers.Conv2D(batch_size, kernel_size=5, strides=2, padding='same', activation='relu'))
-        model.add(tf.keras.layers.MaxPooling2D((2, 2)))
-        model.add(tf.keras.layers.BatchNormalization())
-        model.add(tf.keras.layers.Dropout(0.3))
-        model.add(
-            tf.keras.layers.Conv2D(batch_size * 2, kernel_size=(3, 3), strides=2, padding='same', activation='relu'))
-        model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2)))
-        model.add(tf.keras.layers.BatchNormalization())
-        model.add(
-            tf.keras.layers.Conv2D(batch_size * 4, kernel_size=(3, 3), strides=2, padding='same', activation='relu'))
-        model.add(tf.keras.layers.Dropout(0.3))
-        model.add(tf.keras.layers.Flatten())
-        model.add(tf.keras.layers.Dense(128, kernel_regularizer=regularizers.l2(0.001)))
-        model.add(tf.keras.layers.BatchNormalization())
-        model.add(tf.keras.layers.ReLU())
-        model.add(tf.keras.layers.Dense(batch_size * 2, kernel_regularizer=regularizers.l2(0.001)))
-        model.add(tf.keras.layers.ReLU())
-        model.add(tf.keras.layers.Dropout(0.3))
-        model.add(tf.keras.layers.Dense(n_classes, activation='softmax'))
+            model.add(tf.keras.layers.Conv2D(batch_size, kernel_size=(3, 3), activation='relu'))
+            model.add(tf.keras.layers.BatchNormalization())
+            model.add(tf.keras.layers.Conv2D(batch_size, kernel_size=5, strides=2, padding='same', activation='relu'))
+            model.add(tf.keras.layers.MaxPooling2D((2, 2)))
+            model.add(tf.keras.layers.BatchNormalization())
+            model.add(tf.keras.layers.Dropout(0.3))
+            model.add(
+                tf.keras.layers.Conv2D(batch_size * 2, kernel_size=(3, 3), strides=2, padding='same', activation='relu'))
+            model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2)))
+            model.add(tf.keras.layers.BatchNormalization())
+            model.add(
+                tf.keras.layers.Conv2D(batch_size * 4, kernel_size=(3, 3), strides=2, padding='same', activation='relu'))
+            model.add(tf.keras.layers.Dropout(0.3))
+            model.add(tf.keras.layers.Flatten())
+            model.add(tf.keras.layers.Dense(128, kernel_regularizer=regularizers.l2(0.001)))
+            model.add(tf.keras.layers.BatchNormalization())
+            model.add(tf.keras.layers.ReLU())
+            model.add(tf.keras.layers.Dense(batch_size * 2, kernel_regularizer=regularizers.l2(0.001)))
+            model.add(tf.keras.layers.ReLU())
+            model.add(tf.keras.layers.Dropout(0.3))
+            model.add(tf.keras.layers.Dense(n_classes, activation='softmax'))
 
         model_summary_path = self.log_path.joinpath('model_summary.txt')
         # Open the file

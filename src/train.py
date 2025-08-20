@@ -10,13 +10,14 @@ import dataset
 import model
 
 
-def run_from_config(config_path, log_path=None):
+def run_from_config(config_path, log_path=None, config_override=None):
     """
     Run a train, test set according to config. The output will be saved on the log_path folder.
     To see the structure of the output folder, check the README.
 
     :param config_path:
     :param log_path:
+    :param config_override: Optional dict to override config values
     :return:
     """
     tf.random.set_seed(42)
@@ -24,6 +25,11 @@ def run_from_config(config_path, log_path=None):
     # Read the config file
     f = open(config_path)
     config = json.load(f)
+    
+    # Apply config overrides if provided
+    if config_override:
+        config.update(config_override)
+        
     # TODO: Print full run configuration at start for Slurm logs to make runs comparable.
     # print('Starting training with config:', config_path)  # original single-line indicator
     print('===== RUN CONFIG START =====')
