@@ -36,10 +36,9 @@ class Model:
             os.mkdir(str(self.log_path))
 
         detection_metrics = metrics.ImbalancedDetectionMatrix(noise_class_name='Noise', classes_names=categories)
+        tf.config.run_functions_eagerly(True)
         self.metrics = [
             keras.metrics.SparseCategoricalAccuracy(name='accuracy'),
-            metrics.f1_score,
-            metrics.recall_score,
             detection_metrics.imbalanced_metric,
             detection_metrics.noise_misclas_rate,
             detection_metrics.call_avg_tpr
@@ -113,8 +112,10 @@ class Model:
         self.model = model
 
     def load_existing(self):
-        # TODO: Load model from the 'model' sub-directory to match the save path.
-        self.model = tf.keras.models.load_model(self.log_path.joinpath('model'), custom_objects=self.metrics_dict)
+        # Load model without compilation (for evaluation only)
+        self.model = tf.keras.models.load_model(self.log_path.joinpath('model'), compile=False)
+        # Re-compile with standard metrics for evaluation
+        self.model.compile(metrics=[tf.keras.metrics.SparseCategoricalAccuracy()])
 
     def train(self, x_train, y_train, x_valid, y_valid, batch_size, epochs, loss_function, early_stop,
               monitoring_metric, monitoring_direction, class_weights, learning_rate):
@@ -274,31 +275,51 @@ class Model:
         :return: scores_df (DataFrame), con_mat_df (DataFrame), preds (DataFrame)
         """
         # Create test dataset using streaming approach
+        print("[DEBUG] Creating test dataset from DataFrame ...")
         test_ds = ds.create_tf_dataset(data_split_df, 'test', batch_size, shuffle=False)
-        
         # Get test paths for images_to_test
+        print("[DEBUG] Extracting test paths from DataFrame ...")
         test_paths = data_split_df.loc[data_split_df['set'] == 'test', 'path'].values
         
+        # DEBUG: Print types and samples of test_paths and labels
+        print("[DEBUG] test_paths type:", type(test_paths))
+        print("[DEBUG] test_paths sample:", test_paths[:5] if len(test_paths) > 5 else test_paths)
+        y_test = ds.read_labels_from_file_list(test_paths)
+        print("[DEBUG] y_test type:", type(y_test))
+        print("[DEBUG] y_test sample:", y_test[:5] if len(y_test) > 5 else y_test)
+        print("[DEBUG] test_ds type:", type(test_ds))
+        # DEBUG: Print a single batch from test_ds
+        for batch in test_ds.take(1):
+            print("[DEBUG] test_ds batch types:", [type(x) for x in batch])
+            print("[DEBUG] test_ds batch shapes:", [x.shape for x in batch])
+        
+        # Print class sample counts for the current test set (for debugging)
+        if hasattr(ds, 'print_sample_counts'):
+            print("[DEBUG] Class sample counts for this test set:")
+            ds.print_sample_counts(data_split_df, partition_name="test")
         # Evaluate using tf.data (gets proper metrics like original test method)
+        print("[DEBUG] Calling model.evaluate on test_ds ...")
         scores = self.model.evaluate(test_ds, verbose=0)
-        
+        print("[DEBUG] model.evaluate returned:", scores)
+        print("[DEBUG] model.metrics_names:", self.model.metrics_names)
         # Get predictions
+        print("[DEBUG] Calling model.predict on test_ds ...")
         y_pred = self.model.predict(test_ds, verbose=0)
-        
+        print("[DEBUG] model.predict returned shape:", y_pred.shape)
         # Get true labels for confusion matrix
         y_test = ds.read_labels_from_file_list(test_paths)
-        
+        print("[DEBUG] y_test shape for confusion matrix:", y_test.shape)
         # Build predictions DataFrame (same format as original test method)
         preds = pd.concat(
             [pd.DataFrame(y_pred).reset_index(drop=True), 
              pd.DataFrame(test_paths, columns=['path']).reset_index(drop=True)], axis=1)
-        
+        print("[DEBUG] preds DataFrame shape:", preds.shape)
         # Use existing confusion matrix method (since get_scores is missing)
         con_mat_df = self.get_confusion_matrix(y_test, y_pred, categories=ds.int2class)
-        
+        print("[DEBUG] con_mat_df shape:", con_mat_df.shape)
         # Build scores DataFrame (same format as original test method)
         scores_df = pd.DataFrame([scores], columns=self.model.metrics_names)
-        
+        print("[DEBUG] scores_df shape:", scores_df.shape)
         return scores_df, con_mat_df, preds
 
     def save(self):

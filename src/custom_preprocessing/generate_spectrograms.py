@@ -29,7 +29,7 @@ def generate_spectrograms_for_site(site_output_dir,
                                    yolo_labels_dir=None,
                                    preview_stride=0,
                                    preview_dir=None,
-                                   max_noise_samples_per_site=10_000):
+                                   max_noise_samples_per_site=70_000):
     """
     Generates spectrograms from Koogu-processed data (.npz files) for a specific site.
     Organizes output by class folders and uses shared counters.

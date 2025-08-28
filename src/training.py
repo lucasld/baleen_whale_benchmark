@@ -44,6 +44,10 @@ def create_and_train_model(save_path, paths_df, ds, config, model_name):
 
     # TODO: Added concise run header for this model to improve .out readability (sizes and steps).
     print(f"Train samples: {len(train_paths)}, Valid samples: {len(valid_paths)}, Batch size: {config['BATCH_SIZE']}, Steps/epoch: {steps_per_epoch}, Val steps: {validation_steps}")
+    
+    # Show detailed sample counts per class for this fold
+    ds.print_sample_counts(paths_df, 'train')
+    ds.print_sample_counts(paths_df, 'valid')
 
     history = m.train_with_datasets(
         train_dataset=train_ds,
@@ -105,9 +109,18 @@ def test_model_multiple_noise(cnn_model, paths_df, config, ds, fold, log_path):
     last_noise = noise_to_test[0]
     scores_i = pd.DataFrame()
     con_mat_df = pd.DataFrame()
+    print(f"Testing model {cnn_model.model_name} on test sets with noise ratios: {noise_to_test}")
     for noise_test in noise_to_test:
+        # Check if enough noise samples are available for this ratio
+        max_noise_available = ds.select_files_category('Noise', 'all').__len__()
+        required_noise = ds.get_noise_samples(noise_test)
+        if required_noise != 'all' and required_noise > max_noise_available:
+            print(f"[WARNING] Skipping noise ratio {noise_test}: requires {int(required_noise)} noise samples, only {max_noise_available} available.")
+            continue
         paths_df, train_noise = select_more_noise(paths_df, 'test', last_noise, noise_test, config, ds)
         last_noise = noise_test
+        # Print class sample counts for the current test set
+        ds.print_sample_counts(paths_df, partition_name="test")
         scores_noise, con_mat_noise, predictions = cnn_model.new_test(ds, data_split_df=paths_df)
 
         model.plot_confusion_matrix(con_mat_noise, log_path.joinpath('confusion_matrix_fold%s_noise%s_noise%s.png' %
@@ -148,6 +161,8 @@ def test_model_from_folder(folder_path, ds):
 
 
 def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
+    noise_to_return = new_noise  # Default to the new noise value
+    
     if noise == new_noise:
         return paths_df, noise
     elif new_noise == 'all':
@@ -161,10 +176,10 @@ def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
                     'Noise percentage lower than in first training. '
                     'Not considering it and testing on the first training ratio'
                 )
-                noise2 = config['NOISE_RATIO'][0]
+                noise_to_return = config['NOISE_RATIO'][0]
 
         else:
             if new_noise > noise:
                 paths_df = ds.select_more_noise(paths_df, new_noise, phase)
 
-    return paths_df, noise2
+    return paths_df, noise_to_return

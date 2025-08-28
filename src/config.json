@@ -1,5 +1,5 @@
 {
-  "DATA_DIR": "datasets/preprocessed_dataset_new4/spectrograms",
+  "DATA_DIR": "datasets/preprocessed_dataset_new/spectrograms",
   "OUTPUT_DIR": "outputs/cnn_results",
   "LOCATIONS": [
     "BallenyIslands2015",
@@ -44,9 +44,7 @@
   "NOISE_RATIO": [
     0.25
   ],
-  "NOISE_RATIO_TEST": [
-    "all"
-  ],
+  "NOISE_RATIO_TEST": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
   "USE_CORRECTED_DATASET": false,
   "VALID_SPLIT": 0.3,
   "TEST_SPLIT": "blocked",

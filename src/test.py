@@ -11,6 +11,7 @@ import model
 def test_multiple_models(mother_folder, ds):
     con_mat = pd.DataFrame()
     for folder in mother_folder.glob('*'):
+        print(f'Checking folder: {folder} - is_dir: {folder.is_dir()}')
         if folder.is_dir():  # TODO: Changed isdir() to is_dir() for pathlib compatibility
             print(f'-- Testing model in folder: {folder} --')
             con_mat_i = training.test_model_from_folder(folder, ds)

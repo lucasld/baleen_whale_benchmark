@@ -191,7 +191,8 @@ class SpectrogramDataSet:
             samples_per_subcategory = round(samples_to_load / n_subcategories)
             # The sum of all the samples of the subclasses is smaller than the samples to load
             if num_samples.sum() < samples_to_load:
-                raise Exception('Samples per class too high for available dataset, please choose a lower number')
+                print(f"[WARNING] Requested {samples_to_load} samples for category '{category}', but only {num_samples.sum()} available. Returning all available samples.")
+                samples_to_load_per_subcat = num_samples
 
             # There is enough data at each subclass
             elif all(num_samples >= samples_per_subcategory):
@@ -199,22 +200,59 @@ class SpectrogramDataSet:
 
             # If there is one of the subclasses which has less than its proportional part, check if we can load more
             # of the other subclasses, and do it iteratively until all the samples are reached
+            #elif any(num_samples < samples_per_subcategory):
+            #    samples_df = pd.DataFrame(index=subcats.keys(), columns=['samples_to_load', 'available', 'needed'])
+            #    samples_df['available'] = num_samples
+            #    samples_df['needed'] = samples_per_subcategory
+            #    samples_df['samples_to_load'] = samples_df[['available', 'needed']].min()
+            #    total_loaded = samples_df.samples_to_load.sum()
+            #    while total_loaded < samples_to_load:
+            #        leftover = samples_to_load - total_loaded
+            #        samples_df['needed'] += round(leftover / (samples_df['available'] > samples_df['needed']).sum())
+            #        samples_df['samples_to_load'] = samples_df[['available', 'needed']].min(axis=1)
+            #        total_loaded = samples_df.samples_to_load.sum()
+            #    samples_to_load_per_subcat = samples_df['samples_to_load'].values
+            # Elegant redistribution: allocate fairly based on capacity
             elif any(num_samples < samples_per_subcategory):
-                samples_df = pd.DataFrame(index=subcats.keys(), columns=['samples_to_load', 'available', 'needed'])
-                samples_df['available'] = num_samples
-                samples_df['needed'] = samples_per_subcategory
-                samples_df['samples_to_load'] = samples_df[['available', 'needed']].min()
-                total_loaded = samples_df.samples_to_load.sum()
-                while total_loaded < samples_to_load:
-                    leftover = samples_to_load - total_loaded
-                    samples_df['needed'] += round(leftover / (samples_df['available'] > samples_df['needed']).sum())
-                    samples_df['samples_to_load'] = samples_df[['available', 'needed']].min(axis=1)
-                    total_loaded = samples_df.samples_to_load.sum()
-                samples_to_load_per_subcat = samples_df['samples_to_load'].values
+                subcat_names = list(subcats.keys())
+                print(f"  REDISTRIBUTION: {subcat_names} have {num_samples.tolist()} available")
+                
+                # Start with minimum allocation, then distribute remainder proportionally
+                samples_to_load_per_subcat = np.minimum(num_samples, samples_per_subcategory)
+                remainder = samples_to_load - samples_to_load_per_subcat.sum()
+                print(f"  Initial: {dict(zip(subcat_names, samples_to_load_per_subcat))}, remainder: {remainder}")
+                
+                # Distribute remainder proportionally by capacity
+                capacities = num_samples - samples_to_load_per_subcat
+                if capacities.sum() > 0 and remainder > 0:
+                    # Proportional distribution + handle rounding
+                    extra = (capacities * remainder / capacities.sum()).astype(int)
+                    samples_to_load_per_subcat += extra
+                    
+                    # Distribute any leftover from rounding to highest-capacity subcategories
+                    leftover = remainder - extra.sum()
+                    for idx in np.argsort(capacities)[::-1][:leftover]:
+                        if samples_to_load_per_subcat[idx] < num_samples[idx]:
+                            samples_to_load_per_subcat[idx] += 1
+                    
+                    print(f"  Added: {dict(zip(subcat_names, extra))}")
+                
+                print(f"  Final: {dict(zip(subcat_names, samples_to_load_per_subcat))}, total: {samples_to_load_per_subcat.sum()}")
         else:
             samples_to_load_per_subcat = num_samples
 
-        print(subcats, samples_to_load, num_samples)
+        # DEBUG: Detailed sample allocation information
+        print(f"=== DEBUG: Category {category} ===")
+        print(f"  Requested total: {samples_to_load}")
+        print(f"  Subcategories: {list(subcats.keys())}")
+        print(f"  Available per subcat: {dict(zip(subcats.keys(), num_samples))}")
+        print(f"  Allocated per subcat: {dict(zip(subcats.keys(), samples_to_load_per_subcat))}")
+        print(f"  Total allocated: {samples_to_load_per_subcat.sum()}")
+        if samples_to_load != 'all':
+            print(f"  Target vs Actual: {samples_to_load} vs {samples_to_load_per_subcat.sum()}")
+            if samples_to_load_per_subcat.sum() != samples_to_load:
+                print(f"  *** MISMATCH DETECTED! Difference: {samples_to_load_per_subcat.sum() - samples_to_load} ***")
+        print()
 
         total_selected_subcat = []
         for i, subcat in enumerate(subcats):
@@ -270,21 +308,27 @@ class SpectrogramDataSet:
         :param locations_to_exclude: list of locations to not load (for blocked testing)
         :return: x, y and paths
         """
-        total_paths = []
-
-        # Loop through all the categories
+        print("!-- Selecting data --")
+        non_noise_paths = []
+        # First, collect all non-noise samples
         for cat_i, category in enumerate(self.int2class):
-            # If Noise, select a random amount
             if category == 'Noise':
-                samples_to_load = self.get_noise_samples(noise_ratio)
-            else:
-                samples_to_load = self.samples_per_class
-            # Add the data from that category
-            print('selecting samples of category %s: %s' % (category, samples_to_load))
+                continue
+            samples_to_load = self.samples_per_class
             selected_paths = self.select_files_category(category, samples_to_load, locations_to_exclude)
-            total_paths += selected_paths
+            non_noise_paths += selected_paths
 
-        # TODO: This shuffle is unseeded (same as original). Runs may differ. Keep for fidelity; seed only if determinism required.
+        n_non_noise = len(non_noise_paths)
+        # Calculate the number of noise samples needed for the requested ratio
+        if noise_ratio == 'all':
+            n_noise = 'all'
+        else:
+            n_noise = int((noise_ratio * n_non_noise) / (1 - noise_ratio) + 0.5) if n_non_noise > 0 else 0
+
+        # Now select noise samples
+        noise_paths = self.select_files_category('Noise', n_noise, locations_to_exclude)
+
+        total_paths = non_noise_paths + noise_paths
         total_paths = shuffle(total_paths)
         return total_paths
 
@@ -464,3 +508,36 @@ class SpectrogramDataSet:
         x = self.reshape_images(images)
         y = np.array(labels)
         yield x, y, self, images_for_test
+
+    def print_sample_counts(self, paths_df, partition_name="all"):
+        """
+        Print the number of samples for each class in the specified partition
+        
+        :param paths_df: DataFrame with 'path' and 'set' columns
+        :param partition_name: 'train', 'valid', 'test', or 'all' to show counts for specific partition or all
+        """
+        if partition_name == "all":
+            paths_list = paths_df['path'].values
+            print(f"\n=== Sample counts for ALL partitions ===")
+        else:
+            paths_list = paths_df.loc[paths_df['set'] == partition_name, 'path'].values
+            print(f"\n=== Sample counts for {partition_name.upper()} partition ===")
+        
+        labels = self.read_labels_from_file_list(paths_list)
+        
+        # Count samples per class
+        class_counts = {}
+        for class_name, class_int in self.classes2int.items():
+            count = (labels == class_int).sum()
+            class_counts[class_name] = count
+            print(f"{class_name}: {count:,} samples")
+        
+        total_samples = len(labels)
+        print(f"Total: {total_samples:,} samples")
+        
+        # Show percentages
+        print("\nPercentages:")
+        for class_name, count in class_counts.items():
+            percentage = (count / total_samples) * 100 if total_samples > 0 else 0
+            print(f"{class_name}: {percentage:.1f}%")
+        print()

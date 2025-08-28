@@ -30,7 +30,7 @@ conda activate whale_env2
 
 # Set base paths
 export BASE_DIR="/share/klab/danthes/lliessduques/test/baleen_whale_benchmark"
-export CONFIG_PATH="${BASE_DIR}/src/config.json"
+# CONFIG_PATH will be set after MODEL_FOLDER is determined
 # EVAL_OUTPUT_DIR will be set per-run after MODEL_FOLDER is known
 
 # --- Script Logic ---
@@ -55,6 +55,18 @@ if [ ! -d "$MODEL_FOLDER" ]; then
 fi
 
 echo "Using model folder: $MODEL_FOLDER"
+
+# Set the config path to use the saved config from the training run
+export CONFIG_PATH="${MODEL_FOLDER}/config.json"
+
+# Check if the saved config exists
+if [ ! -f "$CONFIG_PATH" ]; then
+    echo "Error: Saved config file not found at: ${CONFIG_PATH}"
+    echo "Falling back to global config..."
+    export CONFIG_PATH="${BASE_DIR}/src/config.json"
+else
+    echo "Using saved config from training run: $CONFIG_PATH"
+fi
 
 # Set evaluation output directory inside the specific run folder
 export EVAL_OUTPUT_DIR="${MODEL_FOLDER}/evaluation"
