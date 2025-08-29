@@ -450,6 +450,42 @@ class SpectrogramDataSet:
 
         return paths_df
 
+    def select_more_noise_new(self, paths_df, new_noise_ratio, partition):
+        """
+        Adjust the number of noise samples in the given partition to match the desired ratio.
+        Removes excess noise and adds more if needed.
+        """
+        # Get all paths and labels for the partition
+        paths = paths_df.loc[paths_df['set'] == partition, 'path'].values
+        labels = self.read_labels_from_file_list(paths)
+        # Remove all noise samples from the partition
+        non_noise_mask = labels != self.classes2int['Noise']
+        non_noise_paths = paths[non_noise_mask]
+        n_non_noise = len(non_noise_paths)
+        print("Current non-noise samples:", n_non_noise)
+        # Calculate how many noise samples are needed
+        if new_noise_ratio == 'all':
+            n_noise_needed = 'all'
+        else:
+            n_noise_needed = int((new_noise_ratio * n_non_noise) / (1 - new_noise_ratio) + 0.5) if n_non_noise > 0 else 0
+        print("Desired noise samples:", n_noise_needed)
+        # Select new noise samples (not already in the set)
+        noise_paths = self.select_files_category(
+            'Noise',
+            samples_to_load=n_noise_needed,
+            locations_to_exclude=None,
+            samples_to_exclude=paths_df['path'].values
+        )
+        # Build new DataFrame for the partition
+        new_paths = list(non_noise_paths) + list(noise_paths)
+        new_paths_df = pd.DataFrame({'path': new_paths})
+        new_paths_df['set'] = partition
+        # Remove old partition and add new one
+        paths_df = paths_df[paths_df['set'] != partition]
+        paths_df = pd.concat([paths_df, new_paths_df], ignore_index=True)
+        return paths_df
+
+
     def get_noise_samples(self, noise_ratio):
         """
         Compute how many noise samples are necessary to get the specified noise_ratio if each class has an amount of

@@ -199,7 +199,7 @@ def evaluate_models(model_folder, ds, config, output_dir):
             continue
         all_df = pd.read_csv(data_used_path)
         base_test_df = all_df[all_df['set'] == 'test'].copy()
-        last_noise = noise_ratios[0]
+        last_noise = 0  #TODO: changed from noise_ratios[0]
         for noise in noise_ratios:
             print(f"  Noise ratio: {noise}")
             test_df, _ = select_more_noise(base_test_df.copy(), 'test', last_noise, noise, config, ds)

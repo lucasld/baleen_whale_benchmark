@@ -166,11 +166,11 @@ def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
     if noise == new_noise:
         return paths_df, noise
     elif new_noise == 'all':
-        paths_df = ds.select_more_noise(paths_df, new_noise, phase)
+        paths_df = ds.select_more_noise_new(paths_df, new_noise, phase)
     elif noise != 'all':
         if phase == 'test':
             if new_noise > noise:
-                paths_df = ds.select_more_noise(paths_df, new_noise, phase)
+                paths_df = ds.select_more_noise_new(paths_df, new_noise, phase)
             elif new_noise < config['NOISE_RATIO'][0]:
                 print(
                     'Noise percentage lower than in first training. '
@@ -180,6 +180,6 @@ def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
 
         else:
             if new_noise > noise:
-                paths_df = ds.select_more_noise(paths_df, new_noise, phase)
+                paths_df = ds.select_more_noise_new(paths_df, new_noise, phase)
 
     return paths_df, noise_to_return
