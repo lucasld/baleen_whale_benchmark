@@ -163,14 +163,27 @@ def test_model_from_folder(folder_path, ds):
 def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
     noise_to_return = new_noise  # Default to the new noise value
     
+    # Determine locations to exclude based on phase and paths_df
+    locations_to_exclude = None
+    all_locations = config.get('LOCATIONS', None)
+    if all_locations:   
+        test_path = paths_df[paths_df['set'] == phase]['path'].values[0]
+        blocked_location = test_path.split('_')[-2]
+        if phase in ('train', 'valid'):
+            locations_to_exclude = [blocked_location]
+        elif phase == 'test':
+            locations_to_exclude = [loc for loc in all_locations if loc != blocked_location]
+            
     if noise == new_noise:
         return paths_df, noise
     elif new_noise == 'all':
-        paths_df = ds.select_more_noise_new(paths_df, new_noise, phase)
+        paths_df = ds.select_more_noise_new(paths_df, new_noise, phase,
+                                            locations_to_exclude=locations_to_exclude)
     elif noise != 'all':
         if phase == 'test':
             if new_noise > noise:
-                paths_df = ds.select_more_noise_new(paths_df, new_noise, phase)
+                paths_df = ds.select_more_noise_new(paths_df, new_noise, phase,
+                                                    locations_to_exclude=locations_to_exclude)
             elif new_noise < config['NOISE_RATIO'][0]:
                 print(
                     'Noise percentage lower than in first training. '
@@ -180,6 +193,6 @@ def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
 
         else:
             if new_noise > noise:
-                paths_df = ds.select_more_noise_new(paths_df, new_noise, phase)
+                paths_df = ds.select_more_noise_new(paths_df, new_noise, phase, locations_to_exclude=locations_to_exclude)
 
     return paths_df, noise_to_return

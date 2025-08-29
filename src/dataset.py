@@ -450,7 +450,7 @@ class SpectrogramDataSet:
 
         return paths_df
 
-    def select_more_noise_new(self, paths_df, new_noise_ratio, partition):
+    def select_more_noise_new(self, paths_df, new_noise_ratio, partition, locations_to_exclude=None):
         """
         Adjust the number of noise samples in the given partition to match the desired ratio.
         Removes excess noise and adds more if needed.
@@ -473,7 +473,7 @@ class SpectrogramDataSet:
         noise_paths = self.select_files_category(
             'Noise',
             samples_to_load=n_noise_needed,
-            locations_to_exclude=None,
+            locations_to_exclude=locations_to_exclude,
             samples_to_exclude=paths_df['path'].values
         )
         # Build new DataFrame for the partition
