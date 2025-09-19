@@ -19,8 +19,7 @@ def create_and_train_model(save_path, paths_df, ds, config, model_name):
     m = model.Model(save_path=save_path, categories=config['CATEGORIES'], model_name=model_name)
 
     # Use model architecture from config, fallback to IdilCNN if not specified
-    model_architecture = config.get('model_name', 'IdilCNN')
-    m.create(n_classes=ds.n_classes, batch_size=config['BATCH_SIZE'], model_architecture=model_architecture)
+    m.create(n_classes=ds.n_classes, batch_size=config['BATCH_SIZE'])
     # TODO: Switched to tf.data streaming to avoid loading entire datasets into memory; original code below kept for reference.
     # x_train, y_train = ds.load_set_from_df(paths_df, 'train')
     # x_valid, y_valid = ds.load_set_from_df(paths_df, 'valid')
@@ -38,6 +37,12 @@ def create_and_train_model(save_path, paths_df, ds, config, model_name):
     train_paths = paths_df.loc[paths_df['set'] == 'train', 'path'].values  # TODO: derive labels for class weights only
     valid_paths = paths_df.loc[paths_df['set'] == 'valid', 'path'].values
     y_train = ds.read_labels_from_file_list(train_paths)  # TODO: compute class weights from labels
+    y_valid = ds.read_labels_from_file_list(valid_paths)
+    # Create dataset for YOLO models ()
+    yolo_dir =  m.log_path.joinpath('yolo_dataset')
+    ds.create_yolo_dataset(paths_df, 'train', yolo_dir)
+    ds.create_yolo_dataset(paths_df, 'valid', yolo_dir)
+    ds.create_yolo_dataset(paths_df, 'test', yolo_dir)
 
     steps_per_epoch = int((len(train_paths) + config['BATCH_SIZE'] - 1) / config['BATCH_SIZE'])  # TODO: steps for dataset-based training
     validation_steps = int((len(valid_paths) + config['BATCH_SIZE'] - 1) / config['BATCH_SIZE'])
@@ -89,7 +94,7 @@ def run_multiple_models(log_path, paths_df, config, fold, ds, perform_test=False
         model_name = 'fold_%s_noise_%s' % (fold, noise)
         paths_df1, noise = select_more_noise(paths_df, 'train', noise_before, noise, config, ds)
         paths_df2, noise = select_more_noise(paths_df1, 'valid', noise_before, noise, config, ds)
-        # TODO: Added concise fold header to mark start of a model run with key parameters.
+        # TODO: Added fold header to mark start of a model run with key parameters.
         print(f"=== Model: {model_name} | Fold: {fold} | Noise train: {noise} ===")
         cnn_model = create_and_train_model(log_path, paths_df2, ds, config, model_name=model_name)
         if perform_test:
@@ -111,6 +116,7 @@ def test_model_multiple_noise(cnn_model, paths_df, config, ds, fold, log_path):
     con_mat_df = pd.DataFrame()
     print(f"Testing model {cnn_model.model_name} on test sets with noise ratios: {noise_to_test}")
     for noise_test in noise_to_test:
+        print(f"--- Testing with noise ratio: {noise_test} ---")
         # Check if enough noise samples are available for this ratio
         max_noise_available = ds.select_files_category('Noise', 'all').__len__()
         required_noise = ds.get_noise_samples(noise_test)
@@ -126,7 +132,7 @@ def test_model_multiple_noise(cnn_model, paths_df, config, ds, fold, log_path):
         model.plot_confusion_matrix(con_mat_noise, log_path.joinpath('confusion_matrix_fold%s_noise%s_noise%s.png' %
                                                                      (fold, train_noise, noise_test)))
         # Add the metadata
-        scores_noise['noise_percentage_train'] = train_noise
+        scores_noise['noise_percentage_train'] = config["NOISE_RATIO"]  #TODO: changed from: train_noise
         scores_noise['noise_percentage_test'] = noise_test
 
         scores_i = pd.concat([scores_i, scores_noise])

@@ -19,7 +19,7 @@ conda activate whale_env
 # Set paths
 export BASE_DIR="/share/klab/danthes/lliessduques/test/baleen_whale_benchmark"
 export RAW_DATA_PATH="${BASE_DIR}/datasets/prepared_dataset"
-export OUTPUT_DIR="${BASE_DIR}/datasets/preprocessed_dataset_new"
+export OUTPUT_DIR="${BASE_DIR}/datasets/preprocessed_dataset_30000_per_class"
 export CONFIG_PATH="${BASE_DIR}/src/config.json"
 export TAG_MAPPING_PATH="${BASE_DIR}/src/custom_preprocessing/file_tag_mapping.json"
 
@@ -36,9 +36,9 @@ python -u src/custom_preprocessing/preprocess_workflow.py \
   --output "$OUTPUT_DIR" \
   --config "$CONFIG_PATH" \
   --tag_mapping "$TAG_MAPPING_PATH" \
-  --skip_koogu \
   --save_yolo_labels \
   --preview_stride 200 \
   --preview_dir "$OUTPUT_DIR/annotated_specs" \
   --yolo_labels_dir "$OUTPUT_DIR/spectrograms_labels"
 
+#--skip_koogu \

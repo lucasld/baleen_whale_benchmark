@@ -455,6 +455,8 @@ class SpectrogramDataSet:
         Adjust the number of noise samples in the given partition to match the desired ratio.
         Removes excess noise and adds more if needed.
         """
+        print("Select more noise for partition '%s' to reach ratio %.2f" % (partition, new_noise_ratio))
+        print("Locations to exclude:", locations_to_exclude)
         # Get all paths and labels for the partition
         paths = paths_df.loc[paths_df['set'] == partition, 'path'].values
         labels = self.read_labels_from_file_list(paths)
@@ -577,3 +579,104 @@ class SpectrogramDataSet:
             percentage = (count / total_samples) * 100 if total_samples > 0 else 0
             print(f"{class_name}: {percentage:.1f}%")
         print()
+    
+    
+    def create_yolo_dataset(self, paths_df, partition, yolo_base):
+        """
+        Create a flat YOLO detection dataset with cleaned and remapped labels.
+        - Images: Symlinked as before.
+        - Labels: Read from raw source, filter Noise boxes, remap class IDs to merged taxonomy, and write cleaned versions.
+          - If no valid boxes remain (e.g., all Noise), write an empty file.
+          - If source label file is missing, write an empty file.
+          - Fails if a class name is not in self.map_join (no fallbacks).
+
+        :param paths_df: DataFrame with 'path' and 'set' columns.
+        :type paths_df: pandas.DataFrame
+        :param partition: Name of the partition ('train', 'val', or 'test').
+        :type partition: str
+        :param yolo_base: Root directory (Path-like) for the YOLO dataset.
+        :type yolo_base: pathlib.Path or str
+        :return: None
+        :rtype: None
+        """
+        from pathlib import Path
+        
+        # extract file names for the chosen partition
+        paths_list = paths_df.loc[paths_df['set'] == partition, 'path'].values
+
+        # build absolute image paths (unchanged)
+        full_paths = [os.path.join(self.data_dir, p.split('_')[2].split('.')[0], p) for p in paths_list]
+
+        # prepare flat split directories once
+        images_folder = Path(yolo_base) / 'images'
+        labels_folder = Path(yolo_base) / 'labels'
+        flat_img_dir = images_folder / partition
+        flat_lbl_dir = labels_folder / partition
+        flat_img_dir.mkdir(parents=True, exist_ok=True)
+        flat_lbl_dir.mkdir(parents=True, exist_ok=True)
+
+        # Build raw ID to merged ID mapping (recreates logic from clean_spectrogram_labels.py)
+        # - self.categories: list of raw class names (e.g., ["20Hz20Plus", "ABZ", ..., "Noise"])
+        # - self.map_join: dict(raw_name -> merged_name)
+        # - self.classes2int: dict(merged_name -> merged_id)
+        raw_id_to_merged_id = {}
+        for raw_id, raw_name in enumerate(self.categories):
+            if raw_name in self.map_join:
+                merged_name = self.map_join[raw_name]
+                if merged_name in self.classes2int:
+                    raw_id_to_merged_id[raw_id] = self.classes2int[merged_name]
+            # Note: "Noise" won't have a mapping (not in merged classes), so it gets skipped
+            # If raw_name not in self.map_join, fail loudly
+            else:
+                raise ValueError(f"Raw class name '{raw_name}' not found in self.map_join. Please fix the configuration.")
+
+        for img_path in full_paths:
+            if not os.path.exists(img_path):
+                continue  # Skip missing images
+
+            img_name = os.path.basename(img_path)
+            name_root, _ = os.path.splitext(img_name)
+
+            # Symlink image (unchanged)
+            symlink_path_images = flat_img_dir / img_name
+            if not symlink_path_images.exists():
+                symlink_path_images.symlink_to(img_path)
+
+            # Derive raw label source path
+            parts = name_root.split('_')
+            if len(parts) < 2:
+                continue  # Skip invalid filenames
+            location = parts[1]
+            dataset_root = Path(img_path).parents[3]  # Navigate up 3 levels
+            label_dir = dataset_root / 'spectrograms_labels' / location
+            label_src = label_dir / f"{name_root}.txt"
+
+            # Prepare output label path
+            label_dst = flat_lbl_dir / f"{name_root}.txt"
+
+            # Read and process the raw label file
+            cleaned_lines = []
+            if label_src.exists():
+                with open(label_src, 'r') as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) != 5:
+                            continue  # Skip malformed lines
+                        try:
+                            raw_class_id = int(parts[0])
+                            # Skip if this is Noise (no mapping) or unmapped
+                            if raw_class_id not in raw_id_to_merged_id:
+                                continue  # Drop Noise or unknown classes
+                            merged_class_id = raw_id_to_merged_id[raw_class_id]
+                            # Remap the class ID and keep the rest of the line
+                            cleaned_line = f"{merged_class_id} {' '.join(parts[1:])}\n"
+                            cleaned_lines.append(cleaned_line)
+                        except (ValueError, IndexError):
+                            continue  # Skip invalid lines
+
+            # Write the cleaned label file (empty if no valid boxes or missing source)
+            with open(label_dst, 'w') as f:
+                f.writelines(cleaned_lines)
+            # Note: If cleaned_lines is empty, this creates an empty file (0 bytes)
+
+

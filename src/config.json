@@ -1,5 +1,5 @@
 {
-  "DATA_DIR": "datasets/preprocessed_dataset_new/spectrograms",
+  "DATA_DIR": "datasets/preprocessed_dataset_30000_per_class/spectrograms",
   "OUTPUT_DIR": "outputs/cnn_results",
   "LOCATIONS": [
     "BallenyIslands2015",
@@ -39,12 +39,13 @@
       "Dswp"
     ]
   },
-  "SAMPLES_PER_CLASS": 30000,
+  "SAMPLES_PER_CLASS": 5000,
   "comment_SAMPLES_PER_CLASS": "TODO: originally set to 300 - paper says 30000",
   "NOISE_RATIO": [
     0.25
   ],
-  "NOISE_RATIO_TEST": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+  "NOISE_RATIO_TEST": [0.25],
+  "_noise_ratio_sweep": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
   "USE_CORRECTED_DATASET": false,
   "VALID_SPLIT": 0.3,
   "TEST_SPLIT": "blocked",
@@ -60,5 +61,5 @@
   "learning_rate": 0.0001,
   "_commtent_learning_rate": "TODO: changed from 0.001 to 0.0001 since 0.0001 was said in the paper",
   "CLASS_WEIGHTS": null,
-  "test_after_training": true
+  "test_after_training": false
 }

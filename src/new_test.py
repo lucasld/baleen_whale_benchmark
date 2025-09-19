@@ -149,15 +149,18 @@ def compute_metrics_and_confusion(preds_df, label_list, output_dir, model_name, 
     F = np.mean([TCR, 1-NMR, 1-NMR, 1-CMR])
     print(f"[METRICS] Final metrics: TCR={TCR:.4f}, NMR={NMR:.4f}, CMR={CMR:.4f}, F={F:.4f}")
 
+    # Format metrics for filename
+    metrics_str = f"TCR{TCR:.3f}_NMR{NMR:.3f}_CMR{CMR:.3f}_F{F:.3f}"
+
     # 5. Save confusion matrix
     cm_df = pd.DataFrame(confusion_matrix, columns=[int_to_class[i] for i in range(n_classes)], index=[int_to_class[i] for i in range(n_classes)])
-    suffix = f"{model_name}_noise{noise}"
+    suffix = f"{model_name}_noise{noise}_{metrics_str}"
     cm_path = os.path.join(output_dir, f"confusion_{suffix}.csv")
     cm_df.to_csv(cm_path)
     print(f"[METRICS] Confusion matrix saved to {cm_path}")
 
     metrics = {"TCR": TCR, "NMR": NMR, "CMR": CMR, "F": F,
-               "ACC": ACC, "FCR": FCR, "MACRO_RECALL": MACRO_RECALL}
+               "ACC": ACC, "FCR": FCR, "MACRO_RECALL": MACRO_RECALL, "metrics_str": metrics_str}
     return metrics, cm_path
     
 
@@ -205,15 +208,28 @@ def evaluate_models(model_folder, ds, config, output_dir):
             test_df, _ = select_more_noise(base_test_df.copy(), 'test', last_noise, noise, config, ds)
             last_noise = noise
             ds.print_sample_counts(test_df, partition_name="test")
+            # Create a YOLO test dataset for this specific noise level under a dedicated folder
+            try:
+                # Use the fold's base YOLO train/val as already created during training
+                base_yolo_dir = model_subfolder / 'yolo_dataset'
+                # Create a separate root for this noise-level test set to avoid overwriting
+                yolo_test_root = model_subfolder / f'yolo_dataset_test_noise{noise}'
+                ds.create_yolo_dataset(test_df, 'test', yolo_test_root)
+                # Optional: print a concise note for traceability
+                print(f"[YOLO] Created test dataset for noise={noise} at {yolo_test_root}/images/test")
+            except Exception as e:
+                print(f"[YOLO] Skipped creating YOLO test dataset for noise={noise} due to error: {e}")
             scores_df, con_mat_df, preds_df = cnn_model.new_test(ds, test_df)
-            suffix = f"{model_name}_noise{noise}"
-            os.makedirs(output_dir, exist_ok=True)
+            os.makedirs(output_dir, exist_ok=True)  # Ensure output_dir exists before writing any files
+            # Compute metrics and get metrics_str for filenames
+            metrics, cm_path = compute_metrics_and_confusion(preds_df, label_list, output_dir, model_name, noise)
+            metrics_str = metrics["metrics_str"]
+            suffix = f"{model_name}_noise{noise}_{metrics_str}"
             preds_path = pathlib.Path(output_dir) / f"predictions_{suffix}.csv"
             dataused_path = pathlib.Path(output_dir) / f"dataused_{suffix}.csv"
             preds_df.to_csv(preds_path, index=False)
             test_df.to_csv(dataused_path, index=False)
             print("Label list:", label_list)
-            metrics, cm_path = compute_metrics_and_confusion(preds_df, label_list, output_dir, model_name, noise)
             print(f"  Metrics: {metrics}")
             print(f"  Confusion matrix saved to: {cm_path}")
             # Store metrics for later aggregation
