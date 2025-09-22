@@ -32,6 +32,7 @@ class SpectrogramDataSet:
         :param samples_per_class: int, number of samples per class
 
         """
+        self.data_dir = os.path.abspath(data_dir)
         self.locations = locations
         self.data_dir = data_dir
         self.categories = categories
@@ -640,14 +641,15 @@ class SpectrogramDataSet:
             # Symlink image (unchanged)
             symlink_path_images = flat_img_dir / img_name
             if not symlink_path_images.exists():
-                symlink_path_images.symlink_to(img_path)
+                relative_target = os.path.relpath(img_path, str(symlink_path_images.parent))
+                symlink_path_images.symlink_to(relative_target)
 
             # Derive raw label source path
             parts = name_root.split('_')
             if len(parts) < 2:
                 continue  # Skip invalid filenames
             location = parts[1]
-            dataset_root = Path(img_path).parents[3]  # Navigate up 3 levels
+            dataset_root = Path(img_path).parents[2]  # Navigate up 2 levels
             label_dir = dataset_root / 'spectrograms_labels' / location
             label_src = label_dir / f"{name_root}.txt"
 

@@ -33,6 +33,12 @@ from ultralytics.utils import LOGGER
 # Match logging style from yolo_test.py: concise, readable logs
 LOGGER.setLevel(logging.WARNING)
 
+# Add base directory to path for imports
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from src.yolo.yolo_eval_metrics import run_yolo_predictions_and_metrics
+
 # =========================
 # Constants
 # =========================
@@ -186,7 +192,7 @@ def main():
     out_project.mkdir(parents=True, exist_ok=True)
     run_name = args.name or DEFAULT_RUN_NAME
     out_dir = out_project / run_name
-    if out_dir.exists() and args.overwrite:
+    if out_dir.exists() and args.overwrite and not args.skip_train:
         print(f"[YOLO] overwrite: removing existing {out_dir}")
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -247,6 +253,16 @@ def main():
         print(f"[YOLO][eval] {train_fold.name} mAP50={fmt(m50)} mAP50-95={fmt(m)} P={fmt(P)} R={fmt(R)}")
     except Exception:
         pass
+
+    # Run custom metrics (TCR, NMR, CMR, F)
+    noise = float(train_fold.name.split('_noise_')[1]) if '_noise_' in train_fold.name else 0.0
+    model_name = f"YOLO_{run_name}"
+    test_images_dir = ds_root / "images" / "test"
+    labels_dir = ds_root / "labels" / "test"
+    print(f"[YOLO] Computing custom metrics for {train_fold.name}")
+    custom_metrics, cm_path = run_yolo_predictions_and_metrics(
+        model, test_images_dir, labels_dir, lbl, out_dir, model_name, noise
+    )
 
 
 if __name__ == "__main__":

@@ -1,14 +1,28 @@
 #!/bin/bash
-#SBATCH --time=24:00:00
+#SBATCH --time=02:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem=256G
-#SBATCH -c 4
-#SBATCH -p klab-l40s
-#SBATCH --gres=gpu:1
+#SBATCH --mem=32GB
+#SBATCH -c 8
+#SBATCH -p klab-gpu
+#SBATCH --gres=gpu
 #SBATCH --job-name=detect_yolo
 #SBATCH --error=slurm/outputs/logs/detect_yolo_%j.err
 #SBATCH --output=slurm/outputs/logs/detect_yolo_%j.out
+
+# gpu:H100.80gb:8
+
+# #!/bin/bash
+# #SBATCH --time=02:00:00
+# #SBATCH --nodes=1
+# #SBATCH --ntasks-per-node=1
+# #SBATCH --mem=256G
+# #SBATCH -c 4
+# #SBATCH -p klab-l40s
+# #SBATCH --gres=gpu:1
+
+
+
 
 # Load required modules
 spack load miniconda3
@@ -48,7 +62,7 @@ echo "Using CNN run: $RUN_DIR"
 python -u src/yolo/yolo_detect.py \
   --run_dir "$RUN_DIR" \
   --weights yolo11n.pt \
-  --epochs 50 \
+  --epochs 200 \
   --batch 32 \
   --imgsz 512 \
   --device 0 \

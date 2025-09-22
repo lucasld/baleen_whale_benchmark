@@ -2,10 +2,10 @@
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --mem=256G
-#SBATCH -c 4
-#SBATCH -p klab-l40s
-#SBATCH --gres=gpu:1
+#SBATCH --mem=123G
+#SBATCH -c 8
+#SBATCH -p klab-gpu
+#SBATCH --gres=gpu
 #SBATCH --job-name=train_cnn
 #SBATCH --error=slurm/outputs/logs/train_cnn_%j.err
 #SBATCH --output=slurm/outputs/logs/train_cnn_%j.out
