@@ -6,9 +6,9 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from dataset import SpectrogramDataSet
-from training import select_more_noise
-from model import Model
+from .dataset import SpectrogramDataSet
+from .training import select_more_noise
+from .model import Model
 
 
 def compute_metrics_and_confusion(preds_df, label_list, output_dir, model_name, noise):

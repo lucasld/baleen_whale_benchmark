@@ -39,7 +39,7 @@
       "Dswp"
     ]
   },
-  "SAMPLES_PER_CLASS": 30000,
+  "SAMPLES_PER_CLASS": 10000,
   "comment_SAMPLES_PER_CLASS": "TODO: originally set to 300 - paper says 30000",
   "NOISE_RATIO": [
     0.25

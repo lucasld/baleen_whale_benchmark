@@ -3,7 +3,7 @@ __pycache__/
 .cursor/
 #*.txt
 #*.wav
-#*.png
+*.png
 #*.npz
 *.md
 .DS_Store
@@ -12,3 +12,4 @@ slurm/outputs/
 
 datasets
 docs/
+yolo*.pt

@@ -62,11 +62,11 @@ echo "Using CNN run: $RUN_DIR"
 python -u src/yolo/yolo_detect.py \
   --run_dir "$RUN_DIR" \
   --weights yolo11n.pt \
-  --epochs 200 \
-  --batch 32 \
-  --imgsz 512 \
+  --epochs 50 \
+  --batch 16 \
+  --imgsz 128 \
   --device 0 \
   --name det \
-  --overwrite \
+  --skip_train \
   "$@"
 
