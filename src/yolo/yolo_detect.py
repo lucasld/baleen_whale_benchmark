@@ -133,7 +133,7 @@ def train_detector(
         name=run_name,
         exist_ok=True,
         verbose=False,   # no per-batch spam
-        plots=False,
+        plots=True,
         freeze=10
     )
     return model

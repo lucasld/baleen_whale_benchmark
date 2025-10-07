@@ -40,7 +40,7 @@ def _save_confusion(cm, out_dir: Path, model_name: str, noise: float, int_to_cla
     return path
 
 
-def run_yolo_predictions_and_metrics(model, test_images_dir, labels_dir, label_list, output_dir, model_name, noise, conf_thresh=0.2):
+def run_yolo_predictions_and_metrics(model, test_images_dir, labels_dir, label_list, output_dir, model_name, noise, conf_thresh=0.05):
     print(f"[YOLO] Running predictions on {test_images_dir}")
     test_images_dir = Path(test_images_dir)
     labels_dir = Path(labels_dir)
