@@ -23,6 +23,8 @@ import shutil
 from pathlib import Path
 from typing import List, Optional
 
+import numpy as np
+
 # ---- Environment: set BEFORE importing ultralytics ----
 os.environ["RICH_PROGRESS_BAR"] = "0"   # clean logs on SLURM / non-TTY
 os.environ["ULTRALYTICS_QUIET"] = "1"   # suppress batch tqdm spam; we'll print per-epoch
@@ -158,6 +160,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--imgsz", type=int, default=512)
     p.add_argument("--device", type=str, default="0", help="GPU index or 'cpu'.")
     p.add_argument("--skip_train", action="store_true", help="Skip training; only evaluate with provided/best weights.")
+    p.add_argument("--eval_conf", type=float, default=0.05, help="Baseline confidence threshold for reporting metrics (default: 0.05).")
+    p.add_argument("--conf_sweep", action="store_true", help="Evaluate metrics across confidence sweep (default range 0.01-0.95 step 0.05).")
+    p.add_argument("--conf_sweep_min", type=float, default=0.01, help="Minimum confidence for sweep (inclusive).")
+    p.add_argument("--conf_sweep_max", type=float, default=0.95, help="Maximum confidence for sweep (inclusive).")
+    p.add_argument("--conf_sweep_step", type=float, default=0.05, help="Step size for confidence sweep.")
     p.add_argument("--name", type=str, default=None, help=f"Name for the detector run under {YOLO_BASE_DIRNAME}/{PROJECT_DIRNAME}/. Default '{DEFAULT_RUN_NAME}' (overwrite).")
     p.add_argument("--overwrite", action="store_true", help=f"Overwrite existing {YOLO_BASE_DIRNAME}/{PROJECT_DIRNAME}/<name> if it exists.")
     return p.parse_args()
@@ -261,8 +268,21 @@ def main():
     test_images_dir = ds_root / "images" / "test"
     labels_dir = ds_root / "labels" / "test"
     print(f"[YOLO] Computing custom metrics for {train_fold.name}")
+    conf_thresholds = None
+    if args.conf_sweep:
+        sweep_vals = np.arange(args.conf_sweep_min, args.conf_sweep_max + 1e-9, args.conf_sweep_step)
+        conf_thresholds = [float(round(v, 6)) for v in sweep_vals if v >= 0.0]
+
     custom_metrics, cm_path = run_yolo_predictions_and_metrics(
-        model, test_images_dir, labels_dir, lbl, out_dir, model_name, noise
+        model,
+        test_images_dir,
+        labels_dir,
+        lbl,
+        out_dir,
+        model_name,
+        noise,
+        conf_thresh=args.eval_conf,
+        conf_thresholds=conf_thresholds,
     )
 
 

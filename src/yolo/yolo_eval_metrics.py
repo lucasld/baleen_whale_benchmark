@@ -5,9 +5,10 @@ then computes classifier-style metrics and writes comparable confusion matrices 
 """
 
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional
 import os
 import json
+import numpy as np
 import pandas as pd
 from ultralytics import YOLO
 
@@ -26,9 +27,11 @@ def _collect_yolo_predictions(model: YOLO, test_images_dir: Path, conf_thresh: f
             # Sort boxes by confidence descending and keep class order accordingly
             boxes = sorted(list(result.boxes), key=lambda b: float(b.conf.item()), reverse=True)
             classes = [int(b.cls.item()) for b in boxes]
+            confidences = [float(b.conf.item()) for b in boxes]
         else:
             classes = []
-        preds.append({'path': str(img_path), 'all_pred_classes': classes})
+            confidences = []
+        preds.append({'path': str(img_path), 'all_pred_classes': classes, 'all_pred_confidences': confidences})
     return pd.DataFrame(preds)
 
 
@@ -40,7 +43,17 @@ def _save_confusion(cm, out_dir: Path, model_name: str, noise: float, int_to_cla
     return path
 
 
-def run_yolo_predictions_and_metrics(model, test_images_dir, labels_dir, label_list, output_dir, model_name, noise, conf_thresh=0.05):
+def run_yolo_predictions_and_metrics(
+    model,
+    test_images_dir,
+    labels_dir,
+    label_list,
+    output_dir,
+    model_name,
+    noise,
+    conf_thresh: float = 0.05,
+    conf_thresholds: Optional[List[float]] = None,
+):
     print(f"[YOLO] Running predictions on {test_images_dir}")
     test_images_dir = Path(test_images_dir)
     labels_dir = Path(labels_dir)
@@ -50,39 +63,111 @@ def run_yolo_predictions_and_metrics(model, test_images_dir, labels_dir, label_l
     int_to_class: Dict[int, str] = {i: v for v, i in class_to_int.items()}
     noise_id = class_to_int.get('Noise', len(class_to_int) - 1)
 
+    # Build list of thresholds (ensure baseline conf_thresh included)
+    thresholds: List[float] = []
+    if conf_thresholds is not None:
+        thresholds.extend(conf_thresholds)
+    thresholds.append(conf_thresh)
+    thresholds = sorted({round(float(t), 6) for t in thresholds if t is not None and 0.0 <= t <= 1.0})
+    if not thresholds:
+        thresholds = [conf_thresh]
+    collect_conf = max(min(thresholds), 0.0)
+
     # 1) Ground truth table (single-label gt_primary + multi-label sets)
     gt_df = build_ground_truth_dataframe(test_images_dir, labels_dir, class_to_int)
 
-    # 2) Predictions (ordered classes per image by confidence)
-    preds_df = _collect_yolo_predictions(model, test_images_dir, conf_thresh)
+    # 2) Predictions (ordered classes + confidences per image)
+    preds_df = _collect_yolo_predictions(model, test_images_dir, collect_conf)
 
     # 3) Merge on path and ensure alignment
     merged_df = pd.merge(gt_df, preds_df, on='path', how='left')
     merged_df['all_pred_classes'] = merged_df['all_pred_classes'].apply(lambda x: x if isinstance(x, list) else [])
+    merged_df['all_pred_confidences'] = merged_df['all_pred_confidences'].apply(lambda x: x if isinstance(x, list) else [])
 
-    # 4) Collapse strategies
-    y_top1 = predict_top1(merged_df, noise_id)
-    y_presence = predict_presence(merged_df, merged_df['gt_primary'].tolist(), noise_id)
-    y_strict = predict_strict_set_match(merged_df, merged_df['gt_set'].tolist(), merged_df['gt_primary'].tolist(), noise_id)
-
-    strategies = {
-        'top1': y_top1,
-        'presence': y_presence,
-        'strict': y_strict,
-    }
-
-    # 5) Compute confusion + metrics for each strategy (vs. single-label gt_primary)
     y_true = merged_df['gt_primary'].to_numpy()
-    metrics_summary = {}
-    for name, y_pred in strategies.items():
-        cm = compute_confusion(y_true, pd.Series(y_pred).to_numpy(), n_classes=len(class_to_int))
-        mets = compute_paper_metrics(cm, class_to_int)
-        cm_path = _save_confusion(cm, output_dir, model_name, noise, int_to_class, tag=name)
-        metrics_summary[name] = {**mets, 'confusion_path': cm_path}
 
-    # 6) Preds debug
-    write_preds_debug(output_dir, merged_df, strategies, int_to_class)
-    write_summary(output_dir, metrics_summary)
+    metrics_by_threshold: Dict[float, Dict[str, Dict[str, float]]] = {}
+    metrics_rows: List[Dict[str, float]] = []
+    baseline_threshold = conf_thresh if conf_thresh in thresholds else thresholds[0]
+    baseline_strategy_preds: Optional[Dict[str, List[int]]] = None
+    baseline_filtered_classes: Optional[List[List[int]]] = None
 
-    # Return the primary comparator's metrics (top1)
-    return metrics_summary['top1'], metrics_summary['top1']['confusion_path']
+    for thr in thresholds:
+        filtered_classes: List[List[int]] = []
+        for classes, confidences in zip(merged_df['all_pred_classes'], merged_df['all_pred_confidences']):
+            kept = [cls for cls, conf in zip(classes, confidences) if conf >= thr]
+            filtered_classes.append(kept)
+
+        preds_df_thr = pd.DataFrame({'all_pred_classes': filtered_classes})
+
+        y_top1 = predict_top1(preds_df_thr, noise_id)
+        y_presence = predict_presence(preds_df_thr, merged_df['gt_primary'].tolist(), noise_id)
+        y_strict = predict_strict_set_match(
+            preds_df_thr,
+            merged_df['gt_set'].tolist(),
+            merged_df['gt_primary'].tolist(),
+            noise_id,
+        )
+
+        strategies = {
+            'top1': y_top1,
+            'presence': y_presence,
+            'strict': y_strict,
+        }
+
+        strategy_outputs: Dict[str, Dict[str, float]] = {}
+        for name, y_pred in strategies.items():
+            cm = compute_confusion(y_true, np.asarray(y_pred), n_classes=len(class_to_int))
+            mets = compute_paper_metrics(cm, class_to_int)
+            cm_path = _save_confusion(cm, output_dir, model_name, noise, int_to_class, tag=f"{name}_conf{thr:.2f}")
+            record = {**mets, 'confusion_path': cm_path, 'threshold': thr}
+            strategy_outputs[name] = record
+            metrics_rows.append({'threshold': thr, 'strategy': name, **mets, 'confusion_path': cm_path})
+
+        metrics_by_threshold[thr] = strategy_outputs
+
+        if abs(thr - baseline_threshold) < 1e-6:
+            baseline_strategy_preds = {k: list(v) for k, v in strategies.items()}
+            baseline_filtered_classes = [list(cls_list) for cls_list in filtered_classes]
+
+    if metrics_rows:
+        metrics_df = pd.DataFrame(metrics_rows)
+        metrics_df.sort_values(['threshold', 'strategy']).to_csv(
+            output_dir / f"{model_name}_metrics_confidence_sweep.csv",
+            index=False,
+        )
+
+    # Prepare baseline outputs for summary/debug (fall back to first threshold if needed)
+    if baseline_strategy_preds is None or baseline_filtered_classes is None:
+        first_thr = thresholds[0]
+        baseline_filtered_classes = [
+            [cls for cls, conf in zip(classes, confidences) if conf >= first_thr]
+            for classes, confidences in zip(merged_df['all_pred_classes'], merged_df['all_pred_confidences'])
+        ]
+        preds_df_first = pd.DataFrame({'all_pred_classes': baseline_filtered_classes})
+        baseline_strategy_preds = {
+            'top1': predict_top1(preds_df_first, noise_id),
+            'presence': predict_presence(preds_df_first, merged_df['gt_primary'].tolist(), noise_id),
+            'strict': predict_strict_set_match(
+                preds_df_first,
+                merged_df['gt_set'].tolist(),
+                merged_df['gt_primary'].tolist(),
+                noise_id,
+            ),
+        }
+        baseline_threshold = first_thr
+
+    # Write debug artifacts for the baseline threshold
+    merged_for_debug = merged_df.copy()
+    merged_for_debug['all_pred_classes'] = baseline_filtered_classes
+    merged_for_debug['all_pred_confidences'] = [
+        [conf for conf in confidences if conf >= baseline_threshold]
+        for confidences in merged_df['all_pred_confidences']
+    ]
+    write_preds_debug(output_dir, merged_for_debug, baseline_strategy_preds, int_to_class)
+
+    baseline_summary = metrics_by_threshold[baseline_threshold]
+    write_summary(output_dir, baseline_summary)
+
+    baseline_metrics = baseline_summary['top1']
+    return baseline_metrics, baseline_metrics['confusion_path']

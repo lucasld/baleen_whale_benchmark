@@ -42,8 +42,10 @@ cd "$BASE_DIR"
 # Require a run directory id (e.g., 250901_013612)
 if [ -z "$1" ]; then
   echo "Error: No run id provided."
-  echo "Usage: sbatch $0 <run_id> [extra_yolo_detect_args]"
-  echo "Example: sbatch $0 250901_013612 --epochs 50 --batch 32 --imgsz 512"
+  echo "Usage: sbatch $0 <run_id> [--first_only] [extra yolo_detect.py args]"
+  echo "Examples:"
+  echo "  sbatch $0 250901_013612 --conf_sweep --eval_conf 0.05"
+  echo "  sbatch $0 250901_013612 --first_only --skip_train --conf_sweep"
   exit 1
 fi
 
@@ -53,20 +55,53 @@ if [ ! -d "$RUN_DIR" ]; then
   exit 1
 fi
 
-shift 1  # pass any remaining args to yolo_detect.py
+shift 1
+
+# Parse optional flag --first_only and collect extra args for yolo_detect.py
+FIRST_ONLY=0
+EXTRA_ARGS=()
+while (( "$#" )); do
+  case "$1" in
+    --first_only)
+      FIRST_ONLY=1
+      shift 1
+      ;;
+    *)
+      EXTRA_ARGS+=("$1")
+      shift 1
+      ;;
+  esac
+done
 
 echo "Using CNN run: $RUN_DIR"
 
-# Train detector on the selected fold and evaluate across per-noise test sets.
-# The script auto-runs label cleaning (idempotent) before building the detection dataset.
-python -u src/yolo/yolo_detect.py \
-  --run_dir "$RUN_DIR" \
-  --weights yolo11n.pt \
-  --epochs 50 \
-  --batch 16 \
-  --imgsz 128 \
-  --device 0 \
-  --name det \
-  --skip_train \
-  "$@"
+# Discover folds under the run directory
+mapfile -t FOLDS < <(ls -1d "$RUN_DIR"/fold_* 2>/dev/null | xargs -I{} basename {})
+if [ ${#FOLDS[@]} -eq 0 ]; then
+  echo "Error: No fold_* directories found under: $RUN_DIR"
+  exit 1
+fi
+
+if [ "$FIRST_ONLY" -eq 1 ]; then
+  FOLDS=("${FOLDS[0]}")
+  echo "Test mode: processing only first fold: ${FOLDS[0]}"
+else
+  echo "Processing all folds: ${FOLDS[*]}"
+fi
+
+# Iterate folds; train/evaluate YOLO per fold
+for FOLD_NAME in "${FOLDS[@]}"; do
+  echo "\n=== YOLO on fold: $FOLD_NAME ==="
+  python -u src/yolo/yolo_detect.py \
+    --run_dir "$RUN_DIR" \
+    --train_fold "$FOLD_NAME" \
+    --weights yolo11n.pt \
+    --epochs 50 \
+    --batch 16 \
+    --imgsz 128 \
+    --device 0 \
+    --name det \
+    --skip_train \
+    "${EXTRA_ARGS[@]}"
+done
 
