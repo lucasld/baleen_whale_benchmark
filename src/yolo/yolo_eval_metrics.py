@@ -15,7 +15,7 @@ from ultralytics import YOLO
 from .evaluation.ground_truth import build_ground_truth_dataframe
 from .evaluation.strategies import predict_top1, predict_presence, predict_strict_set_match
 from .evaluation.metrics import compute_confusion, compute_paper_metrics, confusion_df
-from .evaluation.reporting import write_preds_debug, write_summary
+from .evaluation.reporting import write_preds_debug, write_summary, plot_tcr_vs_nmr_curves
 
 
 def _collect_yolo_predictions(model: YOLO, test_images_dir: Path, conf_thresh: float) -> pd.DataFrame:
@@ -130,12 +130,16 @@ def run_yolo_predictions_and_metrics(
             baseline_strategy_preds = {k: list(v) for k, v in strategies.items()}
             baseline_filtered_classes = [list(cls_list) for cls_list in filtered_classes]
 
-    if metrics_rows:
-        metrics_df = pd.DataFrame(metrics_rows)
-        metrics_df.sort_values(['threshold', 'strategy']).to_csv(
-            output_dir / f"{model_name}_metrics_confidence_sweep.csv",
-            index=False,
-        )
+    metrics_df = pd.DataFrame(metrics_rows) if metrics_rows else pd.DataFrame()
+    if not metrics_df.empty:
+        metrics_df = metrics_df.sort_values(['threshold', 'strategy'])
+        sweep_csv = output_dir / f"{model_name}_metrics_confidence_sweep.csv"
+        metrics_df.to_csv(sweep_csv, index=False)
+        # Auto-plot curves per strategy and combined
+        try:
+            plot_tcr_vs_nmr_curves(metrics_df, output_dir)
+        except Exception:
+            pass
 
     # Prepare baseline outputs for summary/debug (fall back to first threshold if needed)
     if baseline_strategy_preds is None or baseline_filtered_classes is None:
