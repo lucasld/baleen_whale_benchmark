@@ -57,13 +57,18 @@ fi
 
 shift 1
 
-# Parse optional flag --first_only and collect extra args for yolo_detect.py
+# Parse optional flags and collect extra args for yolo_detect.py
 FIRST_ONLY=0
+SKIP_TRAIN=0
 EXTRA_ARGS=()
 while (( "$#" )); do
   case "$1" in
     --first_only)
       FIRST_ONLY=1
+      shift 1
+      ;;
+    --skip_train)
+      SKIP_TRAIN=1
       shift 1
       ;;
     *)
@@ -92,7 +97,7 @@ fi
 # Iterate folds; train/evaluate YOLO per fold
 for FOLD_NAME in "${FOLDS[@]}"; do
   echo "\n=== YOLO on fold: $FOLD_NAME ==="
-  python -u src/yolo/yolo_detect.py \
+  CMD=(python -u src/yolo/yolo_detect.py \
     --run_dir "$RUN_DIR" \
     --train_fold "$FOLD_NAME" \
     --weights yolo11n.pt \
@@ -100,8 +105,11 @@ for FOLD_NAME in "${FOLDS[@]}"; do
     --batch 16 \
     --imgsz 128 \
     --device 0 \
-    --name det \
-    --skip_train \
-    "${EXTRA_ARGS[@]}"
+    --name det)
+  if [ "$SKIP_TRAIN" -eq 1 ]; then
+    CMD+=(--skip_train)
+  fi
+  CMD+=("${EXTRA_ARGS[@]}")
+  "${CMD[@]}"
 done
 
