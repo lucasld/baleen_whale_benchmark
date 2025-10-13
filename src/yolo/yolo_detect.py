@@ -16,6 +16,7 @@ run_root/
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import logging
 import os
@@ -138,7 +139,8 @@ def train_detector(
         plots=True,
         freeze=10
     )
-    return model
+    return model  # 150 epochs, augment on-off?
+    
 
 
 def best_weights_or(weights: str, out_project: Path, run_name: str) -> Path:
@@ -198,11 +200,34 @@ def main():
     yolo_base = train_fold / YOLO_BASE_DIRNAME
     out_project = yolo_base / PROJECT_DIRNAME
     out_project.mkdir(parents=True, exist_ok=True)
-    run_name = args.name or DEFAULT_RUN_NAME
+
+    def make_unique_name(base_name: str) -> str:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        name = f"{base_name}_{ts}"
+        # ensure uniqueness within out_project
+        suffix = 2
+        candidate = out_project / name
+        while candidate.exists():
+            name = f"{base_name}_{ts}_{suffix}"
+            candidate = out_project / name
+            suffix += 1
+        return name
+
+    provided_name = (args.name.strip() if isinstance(args.name, str) else None)
+    if provided_name:
+        run_name = provided_name
+    else:
+        run_name = make_unique_name(DEFAULT_RUN_NAME)
+
     out_dir = out_project / run_name
-    if out_dir.exists() and args.overwrite and not args.skip_train:
-        print(f"[YOLO] overwrite: removing existing {out_dir}")
-        shutil.rmtree(out_dir)
+    if out_dir.exists():
+        if args.overwrite and not args.skip_train:
+            print(f"[YOLO] overwrite: removing existing {out_dir}")
+            shutil.rmtree(out_dir)
+        else:
+            raise FileExistsError(
+                f"[YOLO] Output directory already exists: {out_dir}. Use --overwrite to reuse this name or omit --name for a fresh timestamped run."
+            )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Training YAML (names/nc included for clarity)

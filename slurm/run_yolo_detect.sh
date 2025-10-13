@@ -78,6 +78,19 @@ while (( "$#" )); do
   esac
 done
 
+# Determine if a shared --name was provided; if not, create one timestamped ID for all folds in this job
+HAS_NAME=0
+for arg in "${EXTRA_ARGS[@]}"; do
+  if [[ "$arg" == --name ]] || [[ "$arg" == --name=* ]]; then
+    HAS_NAME=1
+    break
+  fi
+done
+if [ "$HAS_NAME" -eq 0 ]; then
+  RUN_NAME="det_$(date +%Y%m%d_%H%M%S)"
+  echo "Shared YOLO run name for this job: $RUN_NAME"
+fi
+
 echo "Using CNN run: $RUN_DIR"
 
 # Discover folds under the run directory
@@ -97,19 +110,25 @@ fi
 # Iterate folds; train/evaluate YOLO per fold
 for FOLD_NAME in "${FOLDS[@]}"; do
   echo "\n=== YOLO on fold: $FOLD_NAME ==="
-  CMD=(python -u src/yolo/yolo_detect.py \
-    --run_dir "$RUN_DIR" \
-    --train_fold "$FOLD_NAME" \
-    --weights yolo11n.pt \
-    --epochs 50 \
-    --batch 16 \
-    --imgsz 128 \
-    --device 0 \
-    --name det)
+  CMD=(
+    python -u src/yolo/yolo_detect.py
+    --run_dir "$RUN_DIR"
+    --train_fold "$FOLD_NAME"
+    --weights yolo11n.pt
+    --epochs 200
+    --batch 16
+    --imgsz 128
+    --device 0
+  )
   if [ "$SKIP_TRAIN" -eq 1 ]; then
     CMD+=(--skip_train)
+  fi
+  # Apply the shared run name if the user did not provide one
+  if [ "$HAS_NAME" -eq 0 ]; then
+    CMD+=(--name "$RUN_NAME")
   fi
   CMD+=("${EXTRA_ARGS[@]}")
   "${CMD[@]}"
 done
 
+#TODO: run model with 200 epochs and try to get it to overfit, try bigger yolo model (smallest and biggest), check how yolo performans if not pretrained, W&B
