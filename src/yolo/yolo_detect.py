@@ -26,12 +26,22 @@ from typing import List, Optional
 
 import numpy as np
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # ---- Environment: set BEFORE importing ultralytics ----
 os.environ["RICH_PROGRESS_BAR"] = "0"   # clean logs on SLURM / non-TTY
 os.environ["ULTRALYTICS_QUIET"] = "1"   # suppress batch tqdm spam; we'll print per-epoch
 
-from ultralytics import YOLO
+from ultralytics import YOLO, settings
 from ultralytics.utils import LOGGER
+
+# Initialize Weights & Biases
+import wandb
+wandb.login(key=os.getenv("WANDB_API_KEY"))
+# Enable W&B logging in Ultralytics
+settings.update({"wandb": True})
 
 # Match logging style from yolo_test.py: concise, readable logs
 LOGGER.setLevel(logging.WARNING)
@@ -122,6 +132,7 @@ def train_detector(
     imgsz: int,
     batch: int,
     device: str,
+    fold_name: str,
 ) -> YOLO:
     model = YOLO(weights)
     add_epoch_logger(model)
@@ -137,7 +148,7 @@ def train_detector(
         exist_ok=True,
         verbose=False,   # no per-batch spam
         plots=True,
-        freeze=10
+        freeze=10,
     )
     return model  # 150 epochs, augment on-off?
     
@@ -252,6 +263,7 @@ def main():
             imgsz=args.imgsz,
             batch=args.batch,
             device=args.device,
+            fold_name=train_fold.name,
         )
     else:
         print("[YOLO] Skipping training (--skip_train)")

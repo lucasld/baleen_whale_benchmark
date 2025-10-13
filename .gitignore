@@ -13,3 +13,4 @@ slurm/outputs/
 datasets
 docs/
 yolo*.pt
+.env
