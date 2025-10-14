@@ -44,8 +44,9 @@ if [ -z "$1" ]; then
   echo "Error: No run id provided."
   echo "Usage: sbatch $0 <run_id> [--first_only] [extra yolo_detect.py args]"
   echo "Examples:"
-  echo "  sbatch $0 250901_013612 --conf_sweep --eval_conf 0.05"
-  echo "  sbatch $0 250901_013612 --first_only --skip_train --conf_sweep"
+  echo "  sbatch $0 250901_013612 --eval_conf 0.05"
+  echo "  sbatch $0 250901_013612 --first_only --skip_train --no-conf_sweep"
+  echo "  (confidence sweep runs by default; add --no-conf_sweep to disable)"
   exit 1
 fi
 

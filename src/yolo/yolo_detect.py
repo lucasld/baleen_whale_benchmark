@@ -41,8 +41,10 @@ from ultralytics.utils import DEFAULT_CFG as UL_DEFAULT_CFG
 # Initialize Weights & Biases
 import wandb
 wandb.login(key=os.getenv("WANDB_API_KEY"))
+# Override WandB project name globally before enabling Ultralytics logging
+os.environ["WANDB_PROJECT"] = "baleen-yolo"
 # Enable W&B logging in Ultralytics
-settings.update({"wandb": True})
+settings.update({"wandb": False})
 
 # Monkey patch WandB callback to use short project name
 from ultralytics.utils.callbacks import wb
@@ -291,7 +293,19 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--device", type=str, default="0", help="GPU index or 'cpu'.")
     p.add_argument("--skip_train", action="store_true", help="Skip training; only evaluate with provided/best weights.")
     p.add_argument("--eval_conf", type=float, default=0.05, help="Baseline confidence threshold for reporting metrics (default: 0.05).")
-    p.add_argument("--conf_sweep", action="store_true", help="Evaluate metrics across confidence sweep (default range 0.01-0.95 step 0.05).")
+    p.add_argument(
+        "--conf_sweep",
+        dest="conf_sweep",
+        action="store_true",
+        default=True,
+        help="Evaluate metrics across confidence sweep (default: enabled; range 0.01-0.95 step 0.05).",
+    )
+    p.add_argument(
+        "--no-conf_sweep",
+        dest="conf_sweep",
+        action="store_false",
+        help="Disable confidence sweep and evaluate only at --eval_conf.",
+    )
     p.add_argument("--conf_sweep_min", type=float, default=0.01, help="Minimum confidence for sweep (inclusive).")
     p.add_argument("--conf_sweep_max", type=float, default=0.95, help="Maximum confidence for sweep (inclusive).")
     p.add_argument("--conf_sweep_step", type=float, default=0.05, help="Step size for confidence sweep.")
