@@ -107,6 +107,14 @@ else
   echo "Processing all folds: ${FOLDS[*]}"
 fi
 
+# Training configuration (set your preferred defaults here)
+# Override via env vars if needed: export EPOCHS=200 BATCH=16 IMGSZ=128 WEIGHTS=yolo11n.pt DEVICE=0
+WEIGHTS=${WEIGHTS:-yolo11n.pt}   # default model weights
+EPOCHS=${EPOCHS:-100}            # default epochs for this project (was Ultralytics 100)
+BATCH=${BATCH:-16}               # default batch size (matches Ultralytics default)
+IMGSZ=${IMGSZ:-128}              # default image size (much smaller for spectrograms vs Ultralytics 640)
+DEVICE=${DEVICE:-0}              # default to GPU 0
+
 # Iterate folds; train/evaluate YOLO per fold
 for FOLD_NAME in "${FOLDS[@]}"; do
   echo "\n=== YOLO on fold: $FOLD_NAME ==="
@@ -114,12 +122,13 @@ for FOLD_NAME in "${FOLDS[@]}"; do
     python -u src/yolo/yolo_detect.py
     --run_dir "$RUN_DIR"
     --train_fold "$FOLD_NAME"
-    --weights yolo11n.pt
-    --epochs 200
-    --batch 16
-    --imgsz 128
-    --device 0
+    --weights "$WEIGHTS"
+    --device "$DEVICE"
   )
+  # Only append if set, to preserve Ultralytics defaults when empty
+  if [ -n "$EPOCHS" ]; then CMD+=(--epochs "$EPOCHS"); fi
+  if [ -n "$BATCH" ]; then CMD+=(--batch "$BATCH"); fi
+  if [ -n "$IMGSZ" ]; then CMD+=(--imgsz "$IMGSZ"); fi
   if [ "$SKIP_TRAIN" -eq 1 ]; then
     CMD+=(--skip_train)
   fi
@@ -127,6 +136,7 @@ for FOLD_NAME in "${FOLDS[@]}"; do
   if [ "$HAS_NAME" -eq 0 ]; then
     CMD+=(--name "$RUN_NAME")
   fi
+  # Forward any extra args (e.g., --epochs, --imgsz, --mosaic, --fliplr, --hsv_h, etc.)
   CMD+=("${EXTRA_ARGS[@]}")
   "${CMD[@]}"
 done
