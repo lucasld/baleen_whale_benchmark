@@ -120,6 +120,7 @@ slurm/outputs/
 models/
 ultralytics/
 datasets/
+datasets
 docs/
 *.md
 yolo*.pt
