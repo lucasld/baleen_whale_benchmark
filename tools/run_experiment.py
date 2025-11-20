@@ -12,6 +12,9 @@ from typing import Any, Dict
 import yaml
 
 BOOL_FLAGS_WITH_NEGATION = {
+    # For a registry key `k` with value False, we emit `--{neg}` below.
+    # Keys here must match argparse dest names; values must match the
+    # corresponding long option *without* leading dashes.
     "rect": "no-rect",
     "pretrained": "no-pretrained",
     "deterministic": "no-deterministic",
@@ -31,20 +34,25 @@ def merge_args(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, Any
 
 
 def build_cli_args(k: str, v: Any) -> list[str]:
-    flag = k.replace("_", "-")
+    """Convert a single registry key/value into CLI arguments.
+
+    Registry keys are expected to match argparse dest names (e.g. `eval_conf`,
+    `model_size`, `train_fold`, `conf_sweep`). We emit `--{key}` directly for
+    non-boolean values, and `--{key}` / `--no-{...}` for booleans where a
+    negated flag exists.
+    """
     if isinstance(v, bool):
         neg = BOOL_FLAGS_WITH_NEGATION.get(k)
         if v:
-            return [f"--{flag}"]
+            # Positive case: use the key name directly, e.g. `--pretrained`.
+            return [f"--{k}"]
         if not neg:
             raise ValueError(f"Boolean flag '{k}' does not support automatic --no- form.")
+        # Negative case: emit the explicitly-configured negated flag name,
+        # e.g. `--no-pretrained`, `--no-rect`, `--no-conf_sweep`.
         return [f"--{neg}"]
-    if isinstance(v, (list, tuple)):
-        args = []
-        for item in v:
-            args.extend(build_cli_args(k, item))
-        return args
-    return [f"--{flag}", str(v)]
+    # For non-booleans, use the key name as-is so that `eval_conf` → `--eval_conf`.
+    return [f"--{k}", str(v)]
 
 
 def main() -> None:
