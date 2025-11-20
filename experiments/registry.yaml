@@ -1,0 +1,202 @@
+# Experiment registry for YOLO detection sweeps (thesis run matrix).
+# Each experiment describes CLI args passed to src/yolo/yolo_detect.py.
+# This file mirrors the run matrix in docs/THESIS_PLAN.md and docs/RUN_MATRIX.md.
+# Update base_args (e.g., chosen imgsz, model size, augs, epochs) as decisions are finalized.
+
+base_args:
+  # Shared defaults (represent the current "chosen" config; update as decisions are made)
+  batch: 32
+  imgsz: 256           # initial default; A-series will override per-ID
+  eval_conf: 0.05
+  device: 0
+  model_size: m        # initial default; B-series will override per-ID
+  pretrained: true
+  rect: true
+  epochs: 150          # R0/A-series baseline epochs; B/BS/C/D may override
+  augs: spec_opt       # spectrogram-optimized; C-series will vary this
+  seed: 42
+  deterministic: false
+
+experiments:
+  # -----------------------
+  # R0: Rectangular ablation
+  # -----------------------
+  - id: R0a
+    description: Rectangular ablation (rect=True, spec-opt, imgsz=256, epochs=150)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      rect: true
+      imgsz: 256
+      epochs: 150
+      name: R0a
+
+  - id: R0b
+    description: Rectangular ablation (rect=False, spec-opt, imgsz=256, epochs=150)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      rect: false
+      imgsz: 256
+      epochs: 150
+      name: R0b
+
+  # -----------------------
+  # A-series: Image size sweep (single fold)
+  # -----------------------
+  - id: A1
+    description: Image size sweep (imgsz=192, rect=True, spec-opt, epochs=150)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      imgsz: 192
+      rect: true
+      epochs: 150
+      name: A1
+
+  - id: A2
+    description: Image size sweep (imgsz=256, rect=True, spec-opt, epochs=150)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      imgsz: 256
+      rect: true
+      epochs: 150
+      name: A2
+
+  - id: A3
+    description: Image size sweep (imgsz=320, rect=True, spec-opt, epochs=150)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      imgsz: 320
+      rect: true
+      epochs: 150
+      name: A3
+
+  - id: A4
+    description: Optional upper-bound image size (imgsz=512, rect=True, spec-opt, epochs=150)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      imgsz: 512
+      rect: true
+      epochs: 150
+      name: A4
+
+  - id: A5
+    description: Optional sanity check at best image size (rect True vs False; configure imgsz/rect once best_imgsz is known)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      # Set imgsz and rect overrides explicitly once best_imgsz is chosen.
+      name: A5
+
+  # -----------------------
+  # B-series: Model size sweep (long runs to estimate T_opt per model)
+  # -----------------------
+  - id: B1
+    description: Model size sweep (yolo12n; long run to estimate T_opt(n))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      model_size: n
+      epochs: 450
+      name: B1
+
+  - id: B2
+    description: Model size sweep (yolo12m; long run to estimate T_opt(m))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      model_size: m
+      epochs: 450
+      name: B2
+
+  - id: B3
+    description: Model size sweep (yolo12x; long run to estimate T_opt(x))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      model_size: x
+      epochs: 450
+      name: B3
+
+  # -----------------------
+  # BS-series: Batch size pilot (short runs; LR scaling to be set via lr0 if desired)
+  # -----------------------
+  - id: BS1
+    description: Batch pilot (batch=16, short run; optionally halve lr0 for stability)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      batch: 16
+      epochs: 30
+      name: BS1
+
+  - id: BS2
+    description: Batch pilot (batch=32, short run; baseline batch size)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      batch: 32
+      epochs: 30
+      name: BS2
+
+  - id: BS3
+    description: Batch pilot (batch=64, short run; optionally double lr0)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      batch: 64
+      epochs: 30
+      name: BS3
+
+  # -----------------------
+  # C-series: Augmentation comparison (epochs to be set to ceil(1.2 * T_opt) once known)
+  # -----------------------
+  - id: C1
+    description: Augmentation comparison (Ultralytics defaults; use epochs ≈ ceil(1.2 * T_opt))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      augs: defaults
+      name: C1
+
+  - id: C2
+    description: Augmentation comparison (spectrogram-optimized; use epochs ≈ ceil(1.2 * T_opt))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      augs: spec_opt
+      name: C2
+
+  - id: C3
+    description: Augmentation comparison (spec-opt + NoiseMix; use epochs ≈ ceil(1.2 * T_opt))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      augs: noise_mix
+      noise_mix_alpha: 0.25
+      noise_mix_p: 0.5
+      name: C3
+
+  # -----------------------
+  # D-series: Transfer learning comparison (pretrained vs scratch)
+  # -----------------------
+  - id: D1
+    description: Transfer comparison (COCO-pretrained; best augmentations; epochs ≈ ceil(1.2 * T_opt))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      pretrained: true
+      # augs should be set in base_args to the chosen "best-augs" (e.g., spec_opt or noise_mix)
+      name: D1
+
+  - id: D2
+    description: Transfer comparison (scratch; best augmentations; epochs ≈ ceil(1.5 * T_opt))
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      pretrained: false
+      # Optionally override epochs here once T_scratch is determined.
+      name: D2
+
+  # -----------------------
+  # F-series: Confirmatory runs (all 11 folds)
+  # These entries represent final configs; typically run without a fixed fold so all folds are used.
+  # -----------------------
+  - id: F1
+    description: Final compare (best config across all 11 folds; val-selected confidence per fold)
+    args:
+      # Configure base_args to the selected "best" config before running.
+      name: F1
+
+  - id: F2
+    description: Optional second-best config across all 11 folds (if compute allows)
+    args:
+      # Configure base_args to the selected "runner-up" config before running.
+      name: F2
+

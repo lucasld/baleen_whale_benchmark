@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
+import pandas as pd
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
@@ -34,32 +35,9 @@ load_dotenv()
 os.environ["RICH_PROGRESS_BAR"] = "0"   # clean logs on SLURM / non-TTY
 os.environ["ULTRALYTICS_QUIET"] = "1"   # suppress batch tqdm spam; we'll print per-epoch
 
-from ultralytics import YOLO, settings
+from ultralytics import YOLO
 from ultralytics.utils import LOGGER
 from ultralytics.utils import DEFAULT_CFG as UL_DEFAULT_CFG
-
-# Initialize Weights & Biases
-import wandb
-wandb.login(key=os.getenv("WANDB_API_KEY"))
-# Override WandB project name globally before enabling Ultralytics logging
-os.environ["WANDB_PROJECT"] = "baleen-yolo"
-# Enable W&B logging in Ultralytics
-settings.update({"wandb": False})
-
-# Monkey patch WandB callback to use short project name
-from ultralytics.utils.callbacks import wb
-_original_on_pretrain_routine_start = wb.on_pretrain_routine_start
-
-def _patched_on_pretrain_routine_start(trainer):
-    """Modified WandB callback that uses a short project name."""
-    if not wb.wb.run:
-        wb.wb.init(
-            project="baleen-yolo",  # Short project name instead of path-derived name
-            name=str(trainer.args.name).replace("/", "-"),
-            config=vars(trainer.args),
-        )
-
-wb.on_pretrain_routine_start = _patched_on_pretrain_routine_start
 
 # Match logging style from yolo_test.py: concise, readable logs
 LOGGER.setLevel(logging.WARNING)
@@ -68,6 +46,7 @@ LOGGER.setLevel(logging.WARNING)
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+from src.yolo.aug import NoiseMix
 from src.yolo.yolo_eval_metrics import run_yolo_predictions_and_metrics
 
 # =========================
@@ -77,6 +56,8 @@ from src.yolo.yolo_eval_metrics import run_yolo_predictions_and_metrics
 YOLO_BASE_DIRNAME = "yolo"
 PROJECT_DIRNAME = "runs_det"
 DEFAULT_RUN_NAME = "det"
+MODEL_SIZES = ("n", "m", "x")
+NOISE_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
 
 def find_latest_run(cnn_results_root: Path) -> Path:
@@ -129,6 +110,14 @@ def save_training_config(out_dir: Path, args: argparse.Namespace, run_root: Path
         "imgsz": args.imgsz,
         "device": args.device,
         "weights": args.weights,
+        "rect": args.rect,
+        "seed": args.seed,
+        "deterministic": args.deterministic,
+        "model_size": args.model_size,
+        "pretrained": args.pretrained,
+        "augs_preset": args.augs,
+        "noise_mix_p": args.noise_mix_p,
+        "noise_mix_alpha": args.noise_mix_alpha,
         "optimizer": effective_value("optimizer", getattr(args, "optimizer", None)) if hasattr(args, "optimizer") else UL_DEFAULT_CFG.get("optimizer"),
         "lr0": effective_value("lr0", getattr(args, "lr0", None)) if hasattr(args, "lr0") else UL_DEFAULT_CFG.get("lr0"),
         "close_mosaic": effective_value("close_mosaic", getattr(args, "close_mosaic", None)) if hasattr(args, "close_mosaic") else UL_DEFAULT_CFG.get("close_mosaic"),
@@ -216,6 +205,10 @@ def train_detector(
     batch: int,
     device: str,
     fold_name: str,
+    rect: bool,
+    seed: int,
+    deterministic: bool,
+    augmentations: list | None,
     # Augmentation parameters (optional; None preserves Ultralytics defaults)
     mosaic: float | None = None,
     degrees: float | None = None,
@@ -252,6 +245,9 @@ def train_detector(
         exist_ok=True,
         verbose=False,
         plots=True,
+        rect=rect,
+        seed=seed,
+        deterministic=deterministic,
     )
 
     # Only set optional params if explicitly provided to preserve Ultralytics defaults
@@ -268,6 +264,9 @@ def train_detector(
     ):
         _set_if_not_none(k, v)
 
+    if augmentations:
+        train_kwargs["augmentations"] = augmentations
+
     model.train(**train_kwargs)
     return model  # 150 epochs, augment on-off?
     
@@ -278,6 +277,106 @@ def best_weights_or(weights: str, out_project: Path, run_name: str) -> Path:
     return best if best.exists() else Path(weights)
 
 
+def resolve_weights_source(args: argparse.Namespace, repo_root: Path) -> str:
+    """Return the effective weights/model definition path for this run."""
+    if args.weights:
+        return str(Path(args.weights).expanduser().resolve())
+    model_size = args.model_size.lower()
+    if model_size not in MODEL_SIZES:
+        raise ValueError(f"Unsupported model_size '{args.model_size}'. Expected one of {MODEL_SIZES}.")
+    if args.pretrained:
+        candidate = repo_root / "models" / f"yolo12{model_size}.pt"
+        if not candidate.exists():
+            raise FileNotFoundError(f"Pretrained weights not found at {candidate}.")
+        return str(candidate.resolve())
+    return f"yolo12{model_size}.yaml"
+
+
+def _resolve_image_path(images_dir: Path, stem: str) -> Path:
+    for ext in NOISE_IMAGE_EXTENSIONS:
+        candidate = images_dir / f"{stem}{ext}"
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"Image for stem '{stem}' not found in {images_dir} with extensions {NOISE_IMAGE_EXTENSIONS}.")
+
+
+def collect_noise_image_paths(ds_root: Path) -> list[Path]:
+    labels_dir = ds_root / "labels" / "train"
+    images_dir = ds_root / "images" / "train"
+    if not labels_dir.exists() or not images_dir.exists():
+        raise FileNotFoundError(f"Expected train labels/images under {ds_root}.")
+    noise_paths: list[Path] = []
+    for label_path in sorted(labels_dir.glob("*.txt")):
+        if label_path.stat().st_size == 0:
+            stem = label_path.stem
+            noise_paths.append(_resolve_image_path(images_dir, stem))
+    return noise_paths
+
+
+def build_augmentation_overrides(
+    args: argparse.Namespace,
+    noise_paths: list[Path] | None = None,
+) -> tuple[dict[str, float | None], list | None]:
+    aug_params = {
+        "mosaic": args.mosaic,
+        "degrees": args.degrees,
+        "translate": args.translate,
+        "scale": args.scale,
+        "shear": args.shear,
+        "perspective": args.perspective,
+        "flipud": args.flipud,
+        "fliplr": args.fliplr,
+        "hsv_h": args.hsv_h,
+        "hsv_s": args.hsv_s,
+        "hsv_v": args.hsv_v,
+        "mixup": args.mixup,
+        "cutmix": args.cutmix,
+        "copy_paste": args.copy_paste,
+    }
+    albumentations_transforms = None
+    if args.augs in {"spec_opt", "noise_mix"}:
+        aug_params.update({
+            "mosaic": 0.0,
+            "flipud": 0.0,
+            "fliplr": 0.0,
+            "hsv_h": 0.0,
+            "hsv_s": 0.0,
+            "hsv_v": 0.0,
+            "mixup": 0.0,
+            "cutmix": 0.0,
+            "copy_paste": 0.0,
+        })
+    if args.augs == "noise_mix":
+        if not noise_paths:
+            raise RuntimeError("NoiseMix preset selected but no noise images were found in the training split.")
+        albumentations_transforms = [
+            NoiseMix(noise_paths=noise_paths, alpha=args.noise_mix_alpha, p=args.noise_mix_p)
+        ]
+    return aug_params, albumentations_transforms
+
+
+def select_best_threshold(metrics_df: pd.DataFrame, strategy: str = "top1") -> tuple[float, dict]:
+    df = metrics_df[metrics_df["strategy"] == strategy]
+    if df.empty:
+        raise RuntimeError(f"No metrics available for strategy '{strategy}'.")
+    df_sorted = df.sort_values(["F", "threshold"], ascending=[False, True])
+    row = df_sorted.iloc[0]
+    return float(row["threshold"]), row.to_dict()
+
+
+def find_metrics_for_threshold(metrics_df: pd.DataFrame, strategy: str, threshold: float) -> dict:
+    df = metrics_df[(metrics_df["strategy"] == strategy) & (np.isclose(metrics_df["threshold"], threshold))]
+    if df.empty:
+        raise RuntimeError(f"Metrics for strategy '{strategy}' at threshold {threshold:.4f} not found.")
+    return df.iloc[0].to_dict()
+
+
+def append_selection_to_config(config_path: Path, selection: dict) -> None:
+    data = json.loads(config_path.read_text())
+    data["selection"] = selection
+    config_path.write_text(json.dumps(data, indent=2))
+
+
 # =========================
 # Main workflow
 # =========================
@@ -286,11 +385,19 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train YOLO detector using pre-cleaned dataset from CNN training.")
     p.add_argument("--run_dir", type=str, default=None, help="Path to CNN run folder (outputs/cnn_results/YYMMDD_...).")
     p.add_argument("--train_fold", type=str, default=None, help="Fold name to train on (e.g., fold_XXX). Auto-pick if omitted.")
-    p.add_argument("--weights", type=str, default="yolo11n.pt", help="Detector weights (init for training and/or eval).")
+    p.add_argument("--weights", type=str, default=None, help="Optional explicit detector weights (overrides --model_size/--pretrained).")
+    p.add_argument("--model_size", choices=["n", "m", "x"], default="m", help="YOLO12 model size to use when --weights is omitted.")
+    p.add_argument("--pretrained", dest="pretrained", action="store_true", default=True, help="Use pretrained weights (default).")
+    p.add_argument("--no-pretrained", dest="pretrained", action="store_false", help="Train from scratch using YOLO12 YAML.")
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--batch", type=int, default=32)
     p.add_argument("--imgsz", type=int, default=512)
     p.add_argument("--device", type=str, default="0", help="GPU index or 'cpu'.")
+    p.add_argument("--rect", dest="rect", action="store_true", default=True, help="Enable rectangular training/eval batches (default: True).")
+    p.add_argument("--no-rect", dest="rect", action="store_false", help="Disable rectangular training/eval batches.")
+    p.add_argument("--seed", type=int, default=42, help="Random seed passed to Ultralytics trainer.")
+    p.add_argument("--deterministic", dest="deterministic", action="store_true", default=False, help="Enable deterministic dataloading (slower).")
+    p.add_argument("--no-deterministic", dest="deterministic", action="store_false", help="Disable deterministic mode (default).")
     p.add_argument("--skip_train", action="store_true", help="Skip training; only evaluate with provided/best weights.")
     p.add_argument("--eval_conf", type=float, default=0.05, help="Baseline confidence threshold for reporting metrics (default: 0.05).")
     p.add_argument(
@@ -327,6 +434,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mixup", type=float, default=None, help="MixUp augmentation probability (default: Ultralytics)")
     p.add_argument("--cutmix", type=float, default=None, help="CutMix augmentation probability (default: Ultralytics)")
     p.add_argument("--copy_paste", type=float, default=None, help="Copy-paste augmentation probability (default: Ultralytics)")
+    p.add_argument("--augs", choices=["defaults", "spec_opt", "noise_mix"], default="defaults", help="High-level augmentation preset.")
+    p.add_argument("--noise_mix_p", type=float, default=0.5, help="NoiseMix application probability when --augs noise_mix.")
+    p.add_argument("--noise_mix_alpha", type=float, default=0.25, help="NoiseMix blend factor (alpha) when --augs noise_mix.")
 
     # Additional training parameters (optional; omit to keep defaults)
     p.add_argument("--optimizer", type=str, default=None, help="Optimizer (default: Ultralytics)")
@@ -338,6 +448,8 @@ def parse_args() -> argparse.Namespace:
 
 def main():
     args = parse_args()
+    if not args.conf_sweep:
+        raise ValueError("Confidence sweep must remain enabled for validation-selected confidence policy.")
 
     base_dir = Path(os.getcwd())
     results_root = base_dir / "outputs" / "cnn_results"
@@ -359,6 +471,14 @@ def main():
     ds_root = train_fold / "yolo_dataset"
     if not ds_root.exists():
         raise FileNotFoundError(f"YOLO dataset not found at {ds_root}. Ensure CNN training has created it.")
+
+    noise_paths: list[Path] | None = None
+    if args.augs == "noise_mix":
+        noise_paths = collect_noise_image_paths(ds_root)
+
+    aug_params, albumentations_transforms = build_augmentation_overrides(args, noise_paths)
+    resolved_weights = resolve_weights_source(args, base_dir)
+    args.weights = resolved_weights
 
     # Prepare detector output project inside the fold (fold/yolo/runs_det)
     yolo_base = train_fold / YOLO_BASE_DIRNAME
@@ -417,21 +537,25 @@ def main():
             batch=args.batch,
             device=args.device,
             fold_name=train_fold.name,
+            rect=args.rect,
+            seed=args.seed,
+            deterministic=args.deterministic,
+            augmentations=albumentations_transforms,
             # Augmentation parameters (only pass if provided)
-            mosaic=args.mosaic,
-            degrees=args.degrees,
-            translate=args.translate,
-            scale=args.scale,
-            shear=args.shear,
-            perspective=args.perspective,
-            flipud=args.flipud,
-            fliplr=args.fliplr,
-            hsv_h=args.hsv_h,
-            hsv_s=args.hsv_s,
-            hsv_v=args.hsv_v,
-            mixup=args.mixup,
-            cutmix=args.cutmix,
-            copy_paste=args.copy_paste,
+            mosaic=aug_params.get("mosaic"),
+            degrees=aug_params.get("degrees"),
+            translate=aug_params.get("translate"),
+            scale=aug_params.get("scale"),
+            shear=aug_params.get("shear"),
+            perspective=aug_params.get("perspective"),
+            flipud=aug_params.get("flipud"),
+            fliplr=aug_params.get("fliplr"),
+            hsv_h=aug_params.get("hsv_h"),
+            hsv_s=aug_params.get("hsv_s"),
+            hsv_v=aug_params.get("hsv_v"),
+            mixup=aug_params.get("mixup"),
+            cutmix=aug_params.get("cutmix"),
+            copy_paste=aug_params.get("copy_paste"),
             # Additional training parameters (only pass if provided)
             optimizer=args.optimizer,
             lr0=args.lr0,
@@ -455,6 +579,7 @@ def main():
         imgsz=args.imgsz,
         batch=args.batch,
         device=args.device,
+        rect=args.rect,
         verbose=False,
         plots=False,
         workers=4,
@@ -473,7 +598,7 @@ def main():
         pass
 
     # Persist effective configuration for this run
-    save_training_config(out_dir, args, run_root, train_fold.name)
+    config_path = save_training_config(out_dir, args, run_root, train_fold.name)
 
     # Run custom metrics (TCR, NMR, CMR, F)
     noise = float(train_fold.name.split('_noise_')[1]) if '_noise_' in train_fold.name else 0.0
@@ -485,8 +610,37 @@ def main():
     if args.conf_sweep:
         sweep_vals = np.arange(args.conf_sweep_min, args.conf_sweep_max + 1e-9, args.conf_sweep_step)
         conf_thresholds = [float(round(v, 6)) for v in sweep_vals if v >= 0.0]
+    val_images_dir = ds_root / "images" / "valid"
+    val_labels_dir = ds_root / "labels" / "valid"
+    val_eval_dir = out_dir / "validation_eval"
+    val_eval_dir.mkdir(exist_ok=True)
 
-    custom_metrics, cm_path = run_yolo_predictions_and_metrics(
+    _, _, val_metrics_df = run_yolo_predictions_and_metrics(
+        model,
+        val_images_dir,
+        val_labels_dir,
+        lbl,
+        val_eval_dir,
+        f"{model_name}_val",
+        noise,
+        conf_thresh=args.eval_conf,
+        conf_thresholds=conf_thresholds,
+    )
+    selected_thr, val_row = select_best_threshold(val_metrics_df, strategy="top1")
+    print(f"[YOLO] Validation-selected confidence: {selected_thr:.3f}")
+
+    # Re-plot validation sweep curves with selected threshold marked
+    from .evaluation.reporting import plot_f_vs_confidence_curves, plot_tcr_vs_nmr_curves
+    try:
+        plot_f_vs_confidence_curves(val_metrics_df, val_eval_dir, selected_threshold=selected_thr)
+    except Exception as e:
+        print(f"[YOLO] Warning: Failed to re-plot F vs confidence for validation: {e}")
+    try:
+        plot_tcr_vs_nmr_curves(val_metrics_df, val_eval_dir, selected_threshold=selected_thr)
+    except Exception as e:
+        print(f"[YOLO] Warning: Failed to re-plot TCR vs NMR for validation: {e}")
+
+    custom_metrics, cm_path, test_metrics_df = run_yolo_predictions_and_metrics(
         model,
         test_images_dir,
         labels_dir,
@@ -497,6 +651,39 @@ def main():
         conf_thresh=args.eval_conf,
         conf_thresholds=conf_thresholds,
     )
+    # Re-plot test sweep curves with selected threshold marked
+    try:
+        plot_f_vs_confidence_curves(test_metrics_df, out_dir, selected_threshold=selected_thr)
+    except Exception as e:
+        print(f"[YOLO] Warning: Failed to re-plot F vs confidence for test: {e}")
+    try:
+        plot_tcr_vs_nmr_curves(test_metrics_df, out_dir, selected_threshold=selected_thr)
+    except Exception as e:
+        print(f"[YOLO] Warning: Failed to re-plot TCR vs NMR for test: {e}")
+
+    selected_test_row = find_metrics_for_threshold(test_metrics_df, "top1", selected_thr)
+    test_best_thr, test_best_row = select_best_threshold(test_metrics_df, strategy="top1")
+
+    def _extract_metric_payload(row: dict) -> dict:
+        return {
+            "TCR": float(row["TCR"]),
+            "NMR": float(row["NMR"]),
+            "CMR": float(row["CMR"]),
+            "F": float(row["F"]),
+            "ACC": float(row["ACC"]),
+        }
+
+    selection_summary = {
+        "strategy": "top1",
+        "selected_threshold": selected_thr,
+        "validation_metrics": _extract_metric_payload(val_row),
+        "test_metrics_at_selected_threshold": _extract_metric_payload(selected_test_row),
+        "test_best_threshold": test_best_thr,
+        "test_best_metrics": _extract_metric_payload(test_best_row),
+    }
+    selection_path = out_dir / "selected_threshold_summary.json"
+    selection_path.write_text(json.dumps(selection_summary, indent=2))
+    append_selection_to_config(config_path, selection_summary)
 
 
 if __name__ == "__main__":

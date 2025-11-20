@@ -140,6 +140,11 @@ def run_yolo_predictions_and_metrics(
             plot_tcr_vs_nmr_curves(metrics_df, output_dir)
         except Exception:
             pass
+        try:
+            from .evaluation.reporting import plot_f_vs_confidence_curves  # type: ignore
+            plot_f_vs_confidence_curves(metrics_df, output_dir)
+        except Exception:
+            pass
 
     # Prepare baseline outputs for summary/debug (fall back to first threshold if needed)
     if baseline_strategy_preds is None or baseline_filtered_classes is None:
@@ -174,4 +179,4 @@ def run_yolo_predictions_and_metrics(
     write_summary(output_dir, baseline_summary)
 
     baseline_metrics = baseline_summary['top1']
-    return baseline_metrics, baseline_metrics['confusion_path']
+    return baseline_metrics, baseline_metrics['confusion_path'], metrics_df

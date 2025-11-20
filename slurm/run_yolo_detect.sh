@@ -61,6 +61,7 @@ shift 1
 # Parse optional flags and collect extra args for yolo_detect.py
 FIRST_ONLY=0
 SKIP_TRAIN=0
+TARGET_FOLD=""
 EXTRA_ARGS=()
 while (( "$#" )); do
   case "$1" in
@@ -71,6 +72,10 @@ while (( "$#" )); do
     --skip_train)
       SKIP_TRAIN=1
       shift 1
+      ;;
+    --fold)
+      TARGET_FOLD="$2"
+      shift 2
       ;;
     *)
       EXTRA_ARGS+=("$1")
@@ -101,6 +106,15 @@ if [ ${#FOLDS[@]} -eq 0 ]; then
   exit 1
 fi
 
+if [ -n "$TARGET_FOLD" ]; then
+  if [[ " ${FOLDS[*]} " != *" $TARGET_FOLD "* ]]; then
+    echo "Error: Requested fold '$TARGET_FOLD' not found under $RUN_DIR"
+    exit 1
+  fi
+  FOLDS=("$TARGET_FOLD")
+  echo "Processing requested fold only: $TARGET_FOLD"
+fi
+
 if [ "$FIRST_ONLY" -eq 1 ]; then
   FOLDS=("${FOLDS[0]}")
   echo "Test mode: processing only first fold: ${FOLDS[0]}"
@@ -108,13 +122,12 @@ else
   echo "Processing all folds: ${FOLDS[*]}"
 fi
 
-# Training configuration (set your preferred defaults here)
-# Override via env vars if needed: export EPOCHS=200 BATCH=16 IMGSZ=128 WEIGHTS=yolo11n.pt DEVICE=0
-WEIGHTS=${WEIGHTS:-yolo11n.pt}   # default model weights
-EPOCHS=${EPOCHS:-100}            # default epochs for this project (was Ultralytics 100)
-BATCH=${BATCH:-16}               # default batch size (matches Ultralytics default)
-IMGSZ=${IMGSZ:-128}              # default image size (much smaller for spectrograms vs Ultralytics 640)
-DEVICE=${DEVICE:-0}              # default to GPU 0
+# Optional overrides via env vars (leave empty to use script defaults)
+WEIGHTS=${WEIGHTS:-}
+EPOCHS=${EPOCHS:-}
+BATCH=${BATCH:-}
+IMGSZ=${IMGSZ:-}
+DEVICE=${DEVICE:-0}
 
 # Iterate folds; train/evaluate YOLO per fold
 for FOLD_NAME in "${FOLDS[@]}"; do
@@ -123,10 +136,10 @@ for FOLD_NAME in "${FOLDS[@]}"; do
     python -u src/yolo/yolo_detect.py
     --run_dir "$RUN_DIR"
     --train_fold "$FOLD_NAME"
-    --weights "$WEIGHTS"
     --device "$DEVICE"
   )
   # Only append if set, to preserve Ultralytics defaults when empty
+  if [ -n "$WEIGHTS" ]; then CMD+=(--weights "$WEIGHTS"); fi
   if [ -n "$EPOCHS" ]; then CMD+=(--epochs "$EPOCHS"); fi
   if [ -n "$BATCH" ]; then CMD+=(--batch "$BATCH"); fi
   if [ -n "$IMGSZ" ]; then CMD+=(--imgsz "$IMGSZ"); fi

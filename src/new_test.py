@@ -206,7 +206,10 @@ def evaluate_models(model_folder, ds, config, output_dir):
         last_noise = 0  #TODO: changed from noise_ratios[0]
         for noise in noise_ratios:
             print(f"  Noise ratio: {noise}")
-            test_df, _ = select_more_noise(base_test_df.copy(), 'test', last_noise, noise, config, ds)
+            # No blocked_location concept here (evaluation is over pre-built test_df),
+            # so we pass None to avoid any location-based exclusions.
+            test_df, _ = select_more_noise(base_test_df.copy(), 'test', last_noise, noise, config, ds,
+                                           blocked_location=None)
             last_noise = noise
             ds.print_sample_counts(test_df, partition_name="test")
             # Create a YOLO test dataset for this specific noise level under a dedicated folder

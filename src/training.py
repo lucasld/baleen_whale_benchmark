@@ -92,8 +92,17 @@ def run_multiple_models(log_path, paths_df, config, fold, ds, perform_test=False
         else:
             noise_before = noise_to_train[i - 1]
         model_name = 'fold_%s_noise_%s' % (fold, noise)
-        paths_df1, noise = select_more_noise(paths_df, 'train', noise_before, noise, config, ds)
-        paths_df2, noise = select_more_noise(paths_df1, 'valid', noise_before, noise, config, ds)
+        # Determine blocked_location explicitly for blocked cross-site setting (TEST_SPLIT not float/int)
+        blocked_location = None
+        if not isinstance(config.get('TEST_SPLIT'), (float, int)) and isinstance(fold, str):
+            # In blocked protocol, fold is the held-out location name
+            if 'LOCATIONS' in config and fold in config['LOCATIONS']:
+                blocked_location = fold
+
+        paths_df1, noise = select_more_noise(paths_df, 'train', noise_before, noise, config, ds,
+                                             blocked_location=blocked_location)
+        paths_df2, noise = select_more_noise(paths_df1, 'valid', noise_before, noise, config, ds,
+                                             blocked_location=blocked_location)
         # TODO: Added fold header to mark start of a model run with key parameters.
         print(f"=== Model: {model_name} | Fold: {fold} | Noise train: {noise} ===")
         cnn_model = create_and_train_model(log_path, paths_df2, ds, config, model_name=model_name)
@@ -123,7 +132,14 @@ def test_model_multiple_noise(cnn_model, paths_df, config, ds, fold, log_path):
         if required_noise != 'all' and required_noise > max_noise_available:
             print(f"[WARNING] Skipping noise ratio {noise_test}: requires {int(required_noise)} noise samples, only {max_noise_available} available.")
             continue
-        paths_df, train_noise = select_more_noise(paths_df, 'test', last_noise, noise_test, config, ds)
+        # Determine blocked_location explicitly for blocked cross-site setting (TEST_SPLIT not float/int)
+        blocked_location = None
+        if not isinstance(config.get('TEST_SPLIT'), (float, int)) and isinstance(fold, str):
+            if 'LOCATIONS' in config and fold in config['LOCATIONS']:
+                blocked_location = fold
+
+        paths_df, train_noise = select_more_noise(paths_df, 'test', last_noise, noise_test, config, ds,
+                                                  blocked_location=blocked_location)
         last_noise = noise_test
         # Print class sample counts for the current test set
         ds.print_sample_counts(paths_df, partition_name="test")
@@ -166,15 +182,32 @@ def test_model_from_folder(folder_path, ds):
     return con_mat
 
 
-def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
+def _debug_location_distribution(paths_df, phase, label):
+    """
+    Print counts of samples per location for a given phase.
+    Location is inferred from the filename pattern: <id>_<Location>_<Class>.png
+    """
+    subset = paths_df[paths_df['set'] == phase]
+    if subset.empty:
+        print(f"[DEBUG][locations] {label}: no samples for phase '{phase}'")
+        return
+    locations = subset['path'].apply(lambda p: str(p).split('_')[-2])
+    counts = locations.value_counts()
+    print(f"[DEBUG][locations] {label} phase='{phase}'")
+    print(counts.to_string())
+
+
+def select_more_noise(paths_df, phase, noise, new_noise, config, ds, blocked_location=None):
     noise_to_return = new_noise  # Default to the new noise value
     
-    # Determine locations to exclude based on phase and paths_df
+    # Determine locations to exclude based on phase and explicitly provided blocked_location
     locations_to_exclude = None
     all_locations = config.get('LOCATIONS', None)
-    if all_locations:   
-        test_path = paths_df[paths_df['set'] == phase]['path'].values[0]
-        blocked_location = test_path.split('_')[-2]
+    if all_locations and blocked_location:
+        # For blocked protocol:
+        # - train/valid should exclude the held-out (blocked) location
+        # - test should ONLY include the held-out location
+        _debug_location_distribution(paths_df, phase, label="before")
         if phase in ('train', 'valid'):
             locations_to_exclude = [blocked_location]
         elif phase == 'test':
@@ -200,5 +233,8 @@ def select_more_noise(paths_df, phase, noise, new_noise, config, ds):
         else:
             if new_noise > noise:
                 paths_df = ds.select_more_noise_new(paths_df, new_noise, phase, locations_to_exclude=locations_to_exclude)
+
+    if all_locations and blocked_location:
+        _debug_location_distribution(paths_df, phase, label="after")
 
     return paths_df, noise_to_return
