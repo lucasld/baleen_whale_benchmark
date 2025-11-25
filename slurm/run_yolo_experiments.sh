@@ -1,11 +1,12 @@
 #!/bin/bash
-#SBATCH --time=12:00:00
+
+#SBATCH --time=04:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --mem=32GB
 #SBATCH -c 8
-#SBATCH -p klab-gpu
-#SBATCH --gres=gpu:1
+#SBATCH -p klab-l40s          # Changed from klab-gpu to klab-l40s #SBATCH -p klab-gpu
+#SBATCH --gres=gpu:L40S:1     # Changed from generic gpu to specific L40S type #SBATCH --gres=gpu:1
 #SBATCH --job-name=yolo_experiments
 #SBATCH --error=slurm/outputs/logs/yolo_experiments_%A_%a.err
 #SBATCH --output=slurm/outputs/logs/yolo_experiments_%A_%a.out
