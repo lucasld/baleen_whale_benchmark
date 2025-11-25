@@ -232,7 +232,53 @@ def train_detector(
 ) -> YOLO:
     model = YOLO(weights)
     add_epoch_logger(model)
-    print(f"[YOLO] Starting DET training: epochs={epochs}, imgsz={imgsz}, batch={batch}, device={device}")
+
+    # Build comprehensive parameter summary for logging
+    param_summary = [
+        f"epochs={epochs}",
+        f"imgsz={imgsz}",
+        f"batch={batch}",
+        f"device={device}",
+        f"rect={rect}",
+        f"seed={seed}",
+        f"deterministic={deterministic}",
+    ]
+
+    # Add optional parameters if they differ from None (meaning they're being explicitly set)
+    optional_params = {
+        "mosaic": mosaic,
+        "degrees": degrees,
+        "translate": translate,
+        "scale": scale,
+        "shear": shear,
+        "perspective": perspective,
+        "flipud": flipud,
+        "fliplr": fliplr,
+        "hsv_h": hsv_h,
+        "hsv_s": hsv_s,
+        "hsv_v": hsv_v,
+        "mixup": mixup,
+        "cutmix": cutmix,
+        "copy_paste": copy_paste,
+        "optimizer": optimizer,
+        "lr0": lr0,
+        "close_mosaic": close_mosaic,
+        "freeze": freeze,
+    }
+
+    for param_name, param_value in optional_params.items():
+        if param_value is not None:
+            param_summary.append(f"{param_name}={param_value}")
+
+    # Add model info (extract from weights path if possible)
+    if "yolo12" in weights:
+        model_info = f"model={weights.split('/')[-1] if '/' in weights else weights}"
+    else:
+        model_info = f"weights={weights}"
+
+    param_summary.insert(0, model_info)
+
+    print(f"[YOLO] Starting DET training: {' | '.join(param_summary)}")
     # Build kwargs with required params first
     train_kwargs = dict(
         data=str(data_yaml),
@@ -396,8 +442,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rect", dest="rect", action="store_true", default=True, help="Enable rectangular training/eval batches (default: True).")
     p.add_argument("--no-rect", dest="rect", action="store_false", help="Disable rectangular training/eval batches.")
     p.add_argument("--seed", type=int, default=42, help="Random seed passed to Ultralytics trainer.")
-    p.add_argument("--deterministic", dest="deterministic", action="store_true", default=False, help="Enable deterministic dataloading (slower).")
-    p.add_argument("--no-deterministic", dest="deterministic", action="store_false", help="Disable deterministic mode (default).")
+    p.add_argument("--deterministic", dest="deterministic", action="store_true", default=False, help="Enable deterministic mode: ensures reproducible results across identical runs (slower training).")
+    p.add_argument("--no-deterministic", dest="deterministic", action="store_false", help="Disable deterministic mode (default): faster training, results may vary slightly between identical runs.")
     p.add_argument("--skip_train", action="store_true", help="Skip training; only evaluate with provided/best weights.")
     p.add_argument("--eval_conf", type=float, default=0.05, help="Baseline confidence threshold for reporting metrics (default: 0.05).")
     p.add_argument(

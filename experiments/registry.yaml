@@ -192,10 +192,12 @@ experiments:
     description: Final compare (best config across all 11 folds)
     args:
       # Ensure base_args matches the final best configuration
+      deterministic: true  # Enable for reproducible final results
       name: F1
 
   - id: F2
     description: Optional second-best config (runner-up)
     args:
       # Ensure base_args matches the runner-up configuration
+      deterministic: true  # Enable for reproducible final results
       name: F2
