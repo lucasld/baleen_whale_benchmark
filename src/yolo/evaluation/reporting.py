@@ -7,6 +7,35 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+def write_raw_predictions(
+    out_dir: Path,
+    merged_df: pd.DataFrame,
+    int_to_class: Dict[int, str],
+):
+    """
+    Save the raw merged DataFrame (ground truth + all predictions) to CSV.
+    List columns are JSON-serialized for safety.
+    This ensures post-hoc analysis can be done without re-running inference.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    df = merged_df.copy()
+
+    # Map GT primary ID to name for readability
+    if 'gt_primary' in df.columns:
+        df['gt_primary_name'] = df['gt_primary'].map(int_to_class)
+
+    # Serialize list columns
+    list_cols = ['all_pred_classes', 'all_pred_confidences', 'gt_multiset', 'gt_set']
+    for col in list_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(lambda x: json.dumps(list(x)) if isinstance(x, (list, set, tuple, np.ndarray)) else str(x))
+
+    output_path = out_dir / 'raw_predictions.csv'
+    df.to_csv(output_path, index=False)
+    return output_path
+
+
 def write_preds_debug(
     out_dir: Path,
     merged_df: pd.DataFrame,

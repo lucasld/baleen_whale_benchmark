@@ -1,95 +1,120 @@
 # Experiment registry for YOLO detection sweeps (thesis run matrix).
 # Each experiment describes CLI args passed to src/yolo/yolo_detect.py.
 # This file mirrors the run matrix in docs/THESIS_PLAN.md and docs/RUN_MATRIX.md.
-# Update base_args (e.g., chosen imgsz, model size, augs, epochs) as decisions are finalized.
 
 base_args:
-  # Shared defaults (represent the current "chosen" config; update as decisions are made)
+  # Shared defaults. 
+  # NOTE: These will be updated sequentially as we "lock in" decisions from early runs.
+  # Current placeholders assume:
+  # - Batch size to be fixed after BS series (placeholder: 32)
+  # - Rectangular processing to be confirmed by R0 (placeholder: true)
+  # - Imgsz to be selected by A-series (placeholder: 640)
+  # - Model size to be selected by B-series (placeholder: m)
   batch: 32
-  imgsz: 256           # initial default; A-series will override per-ID
+  imgsz: 640           # Default YOLO size, will be refined in A-series
   eval_conf: 0.05
   device: 0
-  model_size: m        # initial default; B-series will override per-ID
+  model_size: m        # Baseline model, refined in B-series
   pretrained: true
-  rect: true
-  epochs: 150          # R0/A-series baseline epochs; B/BS/C/D may override
-  augs: spec_opt       # spectrogram-optimized; C-series will vary this
+  rect: true           # To be confirmed by R0
+  epochs: 150          # Exploration baseline; B/C/D will increase this
+  augs: spec_opt       # Spectrogram-optimized; C-series will compare this
   seed: 42
   deterministic: false
 
 experiments:
   # -----------------------
-  # R0: Rectangular ablation
+  # 0) BS-series: Batch Size Pilot
+  # Early hardware constraint test on largest model to fix global batch size.
   # -----------------------
-  - id: R0a
-    description: Rectangular ablation (rect=True, spec-opt, imgsz=256, epochs=150)
+  - id: BS1
+    description: Batch pilot (yolo12x, batch=32, imgsz=640, rect=False, epochs=200)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
+      model_size: x
+      batch: 32
+      imgsz: 640
+      rect: false
+      epochs: 200
+      name: BS1
+
+  - id: BS2
+    description: Batch pilot (yolo12x, batch=128, imgsz=640, rect=False, epochs=200)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      model_size: x
+      batch: 128
+      imgsz: 640
+      rect: false
+      epochs: 200
+      name: BS2
+
+  # -----------------------
+  # 1) R0: Rectangular Processing Ablation
+  # Prove that rect=True is efficient and performant.
+  # Uses yolo12m at fixed imgsz=256.
+  # -----------------------
+  - id: R0a
+    description: Rectangular ablation (rect=True, imgsz=256)
+    fold: fold_BallenyIslands2015_noise_0.25
+    args:
+      model_size: m
       rect: true
       imgsz: 256
       epochs: 150
       name: R0a
 
   - id: R0b
-    description: Rectangular ablation (rect=False, spec-opt, imgsz=256, epochs=150)
+    description: Rectangular ablation (rect=False, imgsz=256)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
+      model_size: m
       rect: false
       imgsz: 256
       epochs: 150
       name: R0b
 
   # -----------------------
-  # A-series: Image size sweep (single fold)
+  # 2) A-series: Image Size Sweep
+  # Find optimal resolution using rect=True and yolo12m.
   # -----------------------
   - id: A1
-    description: Image size sweep (imgsz=192, rect=True, spec-opt, epochs=150)
+    description: Image size sweep (imgsz=192, rect=True)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
+      model_size: m
       imgsz: 192
       rect: true
       epochs: 150
       name: A1
 
   - id: A2
-    description: Image size sweep (imgsz=256, rect=True, spec-opt, epochs=150)
+    description: Image size sweep (imgsz=320, rect=True)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
-      imgsz: 256
+      model_size: m
+      imgsz: 320
       rect: true
       epochs: 150
       name: A2
 
   - id: A3
-    description: Image size sweep (imgsz=320, rect=True, spec-opt, epochs=150)
+    description: Image size sweep (imgsz=640, rect=True)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
-      imgsz: 320
+      model_size: m
+      imgsz: 640
       rect: true
       epochs: 150
       name: A3
 
-  - id: A4
-    description: Optional upper-bound image size (imgsz=512, rect=True, spec-opt, epochs=150)
-    fold: fold_BallenyIslands2015_noise_0.25
-    args:
-      imgsz: 512
-      rect: true
-      epochs: 150
-      name: A4
-
-  - id: A5
-    description: Optional sanity check at best image size (rect True vs False; configure imgsz/rect once best_imgsz is known)
-    fold: fold_BallenyIslands2015_noise_0.25
-    args:
-      # Set imgsz and rect overrides explicitly once best_imgsz is chosen.
-      name: A5
-
   # -----------------------
-  # B-series: Model size sweep (long runs to estimate T_opt per model)
+  # 3) B-series: Model Size Sweep
+  # Long runs to find T_opt and best model size.
+  # NOTE: Update base_args['imgsz'] with result from A-series before running.
   # -----------------------
   - id: B1
-    description: Model size sweep (yolo12n; long run to estimate T_opt(n))
+    description: Model size sweep (yolo12n; long run for T_opt)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: n
@@ -97,7 +122,7 @@ experiments:
       name: B1
 
   - id: B2
-    description: Model size sweep (yolo12m; long run to estimate T_opt(m))
+    description: Model size sweep (yolo12m; long run for T_opt)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: m
@@ -105,7 +130,7 @@ experiments:
       name: B2
 
   - id: B3
-    description: Model size sweep (yolo12x; long run to estimate T_opt(x))
+    description: Model size sweep (yolo12x; long run for T_opt)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: x
@@ -113,51 +138,26 @@ experiments:
       name: B3
 
   # -----------------------
-  # BS-series: Batch size pilot (short runs; LR scaling to be set via lr0 if desired)
-  # -----------------------
-  - id: BS1
-    description: Batch pilot (batch=16, short run; optionally halve lr0 for stability)
-    fold: fold_BallenyIslands2015_noise_0.25
-    args:
-      batch: 16
-      epochs: 30
-      name: BS1
-
-  - id: BS2
-    description: Batch pilot (batch=32, short run; baseline batch size)
-    fold: fold_BallenyIslands2015_noise_0.25
-    args:
-      batch: 32
-      epochs: 30
-      name: BS2
-
-  - id: BS3
-    description: Batch pilot (batch=64, short run; optionally double lr0)
-    fold: fold_BallenyIslands2015_noise_0.25
-    args:
-      batch: 64
-      epochs: 30
-      name: BS3
-
-  # -----------------------
-  # C-series: Augmentation comparison (epochs to be set to ceil(1.2 * T_opt) once known)
+  # 4) C-series: Augmentation Comparison
+  # NOTE: Update base_args['model_size'] and 'imgsz' from B/A results.
+  # NOTE: Set epochs ≈ ceil(1.2 * T_opt) based on B-series.
   # -----------------------
   - id: C1
-    description: Augmentation comparison (Ultralytics defaults; use epochs ≈ ceil(1.2 * T_opt))
+    description: Augmentation comparison (Ultralytics defaults)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       augs: defaults
       name: C1
 
   - id: C2
-    description: Augmentation comparison (spectrogram-optimized; use epochs ≈ ceil(1.2 * T_opt))
+    description: Augmentation comparison (spectrogram-optimized)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       augs: spec_opt
       name: C2
 
   - id: C3
-    description: Augmentation comparison (spec-opt + NoiseMix; use epochs ≈ ceil(1.2 * T_opt))
+    description: Augmentation comparison (spec-opt + NoiseMix)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       augs: noise_mix
@@ -166,37 +166,36 @@ experiments:
       name: C3
 
   # -----------------------
-  # D-series: Transfer learning comparison (pretrained vs scratch)
+  # 5) D-series: Transfer Learning
+  # NOTE: Update base_args['augs'] to best from C-series.
   # -----------------------
   - id: D1
-    description: Transfer comparison (COCO-pretrained; best augmentations; epochs ≈ ceil(1.2 * T_opt))
+    description: Transfer comparison (COCO-pretrained; epochs ≈ 1.2*T_opt)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       pretrained: true
-      # augs should be set in base_args to the chosen "best-augs" (e.g., spec_opt or noise_mix)
       name: D1
 
   - id: D2
-    description: Transfer comparison (scratch; best augmentations; epochs ≈ ceil(1.5 * T_opt))
+    description: Transfer comparison (Scratch; epochs ≈ 1.5*T_opt)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       pretrained: false
-      # Optionally override epochs here once T_scratch is determined.
+      # Override epochs manually here when dispatching if different from base_args
       name: D2
 
   # -----------------------
-  # F-series: Confirmatory runs (all 11 folds)
-  # These entries represent final configs; typically run without a fixed fold so all folds are used.
+  # 6) F-series: Confirmatory Runs
+  # Final 11-fold validation of best config.
   # -----------------------
   - id: F1
-    description: Final compare (best config across all 11 folds; val-selected confidence per fold)
+    description: Final compare (best config across all 11 folds)
     args:
-      # Configure base_args to the selected "best" config before running.
+      # Ensure base_args matches the final best configuration
       name: F1
 
   - id: F2
-    description: Optional second-best config across all 11 folds (if compute allows)
+    description: Optional second-best config (runner-up)
     args:
-      # Configure base_args to the selected "runner-up" config before running.
+      # Ensure base_args matches the runner-up configuration
       name: F2
-

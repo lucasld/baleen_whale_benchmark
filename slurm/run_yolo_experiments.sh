@@ -12,10 +12,10 @@
 #SBATCH --output=slurm/outputs/logs/yolo_experiments_%A_%a.out
 
 # Usage:
-#   sbatch slurm/run_yolo_experiments.sh 251008_160341 --ids R0a,R0b --fold fold_BallenyIslands2015_noise_0.25
+#   sbatch slurm/run_yolo_experiments.sh 251008_160341 --ids R0a,R0b
 # For concurrent runs with arrays:
-#   sbatch --array=1-2%2 slurm/run_yolo_experiments.sh 251008_160341 --ids R0a,R0b --fold fold_BallenyIslands2015_noise_0.25
-#   sbatch --array=1-4%4 slurm/run_yolo_experiments.sh 251008_160341 --ids A1,A2,A3,A4 --fold fold_BallenyIslands2015_noise_0.25
+#   sbatch --array=1-2%2 slurm/run_yolo_experiments.sh 251008_160341 --ids R0a,R0b
+#   sbatch --array=1-3%3 slurm/run_yolo_experiments.sh 251008_160341 --ids A1,A2,A3
 
 # ---- Env setup (mirror run_yolo_detect.sh) ----
 spack load miniconda3
@@ -29,7 +29,7 @@ cd "$BASE_DIR" || exit 1
 # ---- Parse positional run_id ----
 if [ -z "$1" ]; then
   echo "Error: No run id provided."
-  echo "Usage: sbatch [--array=...] $0 <run_id> --ids ID1,ID2,... [--fold <fold_name>] [--extra \"...\"]"
+  echo "Usage: sbatch [--array=...] $0 <run_id> --ids ID1,ID2,... [--extra \"...\"]"
   exit 1
 fi
 
@@ -43,17 +43,12 @@ shift 1
 
 # ---- Parse script arguments ----
 IDS=""
-FOLD_OVERRIDE=""
 EXTRA_ARGS_STR=""
 
 while (( "$#" )); do
   case "$1" in
     --ids)
       IDS="$2"
-      shift 2
-      ;;
-    --fold)
-      FOLD_OVERRIDE="$2"
       shift 2
       ;;
     --extra)
@@ -78,9 +73,6 @@ NUM_IDS=${#EXP_IDS[@]}
 
 echo "Using CNN run: $RUN_DIR"
 echo "Experiment IDs: ${EXP_IDS[*]}"
-if [ -n "$FOLD_OVERRIDE" ]; then
-  echo "Fold override: $FOLD_OVERRIDE"
-fi
 if [ -n "$SLURM_ARRAY_TASK_ID" ]; then
   echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID (1-based), total IDs: $NUM_IDS"
 fi
@@ -94,10 +86,6 @@ run_one_experiment() {
     --run-dir "outputs/cnn_results/$RUN_ID"
     --ids "$exp_id"
   )
-
-  if [ -n "$FOLD_OVERRIDE" ]; then
-    CMD+=(--fold "$FOLD_OVERRIDE")
-  fi
 
   if [ -n "$EXTRA_ARGS_STR" ]; then
     # EXTRA_ARGS_STR is a single string, we need to split it safely

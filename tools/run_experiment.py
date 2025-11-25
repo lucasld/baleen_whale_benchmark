@@ -60,7 +60,6 @@ def main() -> None:
     parser.add_argument("--registry", type=Path, default=Path("experiments/registry.yaml"))
     parser.add_argument("--run-dir", type=str, required=True, help="CNN run directory (outputs/cnn_results/YYMMDD_...).")
     parser.add_argument("--ids", type=str, required=True, help="Comma-separated experiment IDs to run.")
-    parser.add_argument("--fold", type=str, default=None, help="Override fold for all experiments (default: use registry entry).")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without executing.")
     parser.add_argument("--extra", type=str, default="", help="Additional CLI args appended to every command.")
     args = parser.parse_args()
@@ -79,17 +78,33 @@ def main() -> None:
     for eid in requested:
         exp = exp_index[eid]
         exp_args = merge_args(base_args, exp.get("args", {}))
-        if args.fold:
-            exp_args["train_fold"] = args.fold
-        elif exp.get("fold"):
-            exp_args["train_fold"] = exp["fold"]
-        cmd = list(base_cmd)
-        for key, value in exp_args.items():
-            cmd.extend(build_cli_args(key, value))
-        cmd.extend(extra_tokens)
-        print("[run_experiment]", " ".join(shlex.quote(c) for c in cmd))
-        if args.dry_run:
-            continue
-        subprocess.run(cmd, check=True)
+        
+        # Identify target folds: explicit in registry, or all found in run_dir
+        if exp.get("fold"):
+            target_folds = [exp["fold"]]
+        else:
+            # Auto-discover all folds if not specified (e.g. for confirmatory runs)
+            run_path = Path(args.run_dir)
+            target_folds = sorted([p.name for p in run_path.glob("fold_*") if p.is_dir()])
+            if not target_folds:
+                print(f"[run_experiment] Warning: No 'fold_*' directories found in {args.run_dir} for ID {eid}")
+                continue
+            print(f"[run_experiment] ID {eid} has no fixed fold. Running on {len(target_folds)} detected folds: {target_folds}")
+
+        for fold_name in target_folds:
+            # Create a localized args copy for this fold
+            current_args = dict(exp_args)
+            current_args["train_fold"] = fold_name
+            
+            cmd = list(base_cmd)
+            for key, value in current_args.items():
+                cmd.extend(build_cli_args(key, value))
+            
+            cmd.extend(extra_tokens)
+            print(f"[run_experiment] [{eid}::{fold_name}]", " ".join(shlex.quote(c) for c in cmd))
+            
+            if args.dry_run:
+                continue
+            subprocess.run(cmd, check=True)
 if __name__ == "__main__":
     main()

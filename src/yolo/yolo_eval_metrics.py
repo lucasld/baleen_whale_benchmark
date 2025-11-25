@@ -15,7 +15,7 @@ from ultralytics import YOLO
 from .evaluation.ground_truth import build_ground_truth_dataframe
 from .evaluation.strategies import predict_top1, predict_presence, predict_strict_set_match
 from .evaluation.metrics import compute_confusion, compute_paper_metrics, confusion_df
-from .evaluation.reporting import write_preds_debug, write_summary, plot_tcr_vs_nmr_curves
+from .evaluation.reporting import write_preds_debug, write_summary, plot_tcr_vs_nmr_curves, write_raw_predictions
 
 
 def _collect_yolo_predictions(model: YOLO, test_images_dir: Path, conf_thresh: float) -> pd.DataFrame:
@@ -83,6 +83,9 @@ def run_yolo_predictions_and_metrics(
     merged_df = pd.merge(gt_df, preds_df, on='path', how='left')
     merged_df['all_pred_classes'] = merged_df['all_pred_classes'].apply(lambda x: x if isinstance(x, list) else [])
     merged_df['all_pred_confidences'] = merged_df['all_pred_confidences'].apply(lambda x: x if isinstance(x, list) else [])
+
+    # Save raw predictions (unfiltered) for safety/re-analysis
+    write_raw_predictions(output_dir, merged_df, int_to_class)
 
     y_true = merged_df['gt_primary'].to_numpy()
 
