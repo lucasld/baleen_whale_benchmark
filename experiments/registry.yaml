@@ -28,23 +28,23 @@ experiments:
   # Early hardware constraint test on largest model to fix global batch size.
   # -----------------------
   - id: BS1
-    description: Batch pilot (yolo12x, batch=32, imgsz=640, rect=False, epochs=200)
+    description: Batch pilot (yolo12x, batch=32, imgsz=320, rect=False, epochs=200)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: x
       batch: 32
-      imgsz: 640
+      imgsz: 320
       rect: false
       epochs: 200
       name: BS1
 
   - id: BS2
-    description: Batch pilot (yolo12x, batch=128, imgsz=640, rect=False, epochs=200)
+    description: Batch pilot (yolo12x, batch=64, imgsz=320, rect=False, epochs=200)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: x
-      batch: 128
-      imgsz: 640
+      batch: 64
+      imgsz: 320
       rect: false
       epochs: 200
       name: BS2

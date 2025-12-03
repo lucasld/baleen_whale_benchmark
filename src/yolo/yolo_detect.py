@@ -569,6 +569,7 @@ def main():
         "test":  str((ds_root / "images" / "test").resolve()),
         "names": merged_names,
         "nc": len(merged_names),
+        "workers": 8,
     })
 
     # Train
@@ -676,7 +677,7 @@ def main():
     print(f"[YOLO] Validation-selected confidence: {selected_thr:.3f}")
 
     # Re-plot validation sweep curves with selected threshold marked
-    from .evaluation.reporting import plot_f_vs_confidence_curves, plot_tcr_vs_nmr_curves
+    from src.yolo.evaluation.reporting import plot_f_vs_confidence_curves, plot_tcr_vs_nmr_curves
     try:
         plot_f_vs_confidence_curves(val_metrics_df, val_eval_dir, selected_threshold=selected_thr)
     except Exception as e:
