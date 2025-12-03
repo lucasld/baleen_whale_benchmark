@@ -68,9 +68,8 @@ def plot_tcr_vs_nmr_curves(metrics_df: pd.DataFrame, out_dir: Path, selected_thr
     """
     Create TCR vs NMR plots from a confidence sweep metrics dataframe.
 
-    - Combined plot overlaying all strategies
-    - Individual plots per strategy
-    - Optionally marks the selected operating point for top1 strategy
+    - Plots Top-1 strategy performance across confidence thresholds
+    - Optionally marks the selected operating point
     """
     out_dir = Path(out_dir)
     plots_dir = out_dir / 'plots'
@@ -107,7 +106,7 @@ def plot_tcr_vs_nmr_curves(metrics_df: pd.DataFrame, out_dir: Path, selected_thr
     ax.grid(True, linestyle='--', alpha=0.4)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(plots_dir / 'tcr_vs_nmr_all_strategies.png', dpi=200)
+    fig.savefig(plots_dir / 'tcr_vs_nmr_top1.png', dpi=200)
     plt.close(fig)
 
     # Individual plots per strategy
@@ -141,9 +140,8 @@ def plot_f_vs_confidence_curves(metrics_df: pd.DataFrame, out_dir: Path, selecte
     """
     Create F vs confidence plots from a confidence sweep metrics dataframe.
 
-    - Combined plot overlaying all strategies
-    - Individual plots per strategy
-    - Optionally marks the selected operating point for top1 strategy
+    - Plots Top-1 strategy performance across confidence thresholds
+    - Optionally marks the selected operating point
     """
     out_dir = Path(out_dir)
     plots_dir = out_dir / 'plots'
@@ -174,13 +172,13 @@ def plot_f_vs_confidence_curves(metrics_df: pd.DataFrame, out_dir: Path, selecte
             ax.plot(selected_threshold, F_sel, 'ro', markersize=6, label=f'Selected: {selected_threshold:.3f}')
     ax.set_xlabel('Confidence threshold')
     ax.set_ylabel('F-score')
-    ax.set_title('F vs confidence across strategies')
+    ax.set_title('F vs confidence threshold')
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.grid(True, linestyle='--', alpha=0.4)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(plots_dir / 'f_vs_confidence_all_strategies.png', dpi=200)
+    fig.savefig(plots_dir / 'f_vs_confidence_top1.png', dpi=200)
     plt.close(fig)
 
     # Individual plots per strategy

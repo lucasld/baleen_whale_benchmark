@@ -119,6 +119,7 @@ experiments:
     args:
       model_size: n
       epochs: 450
+      patience: 0
       name: B1
 
   - id: B2
@@ -127,6 +128,7 @@ experiments:
     args:
       model_size: m
       epochs: 450
+      patience: 0
       name: B2
 
   - id: B3
@@ -135,6 +137,7 @@ experiments:
     args:
       model_size: x
       epochs: 450
+      patience: 0
       name: B3
 
   # -----------------------

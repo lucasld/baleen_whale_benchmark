@@ -122,6 +122,7 @@ def save_training_config(out_dir: Path, args: argparse.Namespace, run_root: Path
         "lr0": effective_value("lr0", getattr(args, "lr0", None)) if hasattr(args, "lr0") else UL_DEFAULT_CFG.get("lr0"),
         "close_mosaic": effective_value("close_mosaic", getattr(args, "close_mosaic", None)) if hasattr(args, "close_mosaic") else UL_DEFAULT_CFG.get("close_mosaic"),
         "freeze": getattr(args, "freeze", None),
+        "patience": getattr(args, "patience", None),
     }
 
     augmentations = {
@@ -229,6 +230,7 @@ def train_detector(
     lr0: float | None = None,
     close_mosaic: int | None = None,
     freeze: int | None = None,
+    patience: int | None = None,
 ) -> YOLO:
     model = YOLO(weights)
     add_epoch_logger(model)
@@ -306,7 +308,7 @@ def train_detector(
         ("shear", shear), ("perspective", perspective), ("flipud", flipud), ("fliplr", fliplr),
         ("hsv_h", hsv_h), ("hsv_s", hsv_s), ("hsv_v", hsv_v), ("mixup", mixup), ("cutmix", cutmix),
         ("copy_paste", copy_paste), ("optimizer", optimizer), ("lr0", lr0), ("close_mosaic", close_mosaic),
-        ("freeze", freeze),
+        ("freeze", freeze), ("patience", patience),
     ):
         _set_if_not_none(k, v)
 
@@ -407,7 +409,10 @@ def select_best_threshold(metrics_df: pd.DataFrame, strategy: str = "top1") -> t
         raise RuntimeError(f"No metrics available for strategy '{strategy}'.")
     df_sorted = df.sort_values(["F", "threshold"], ascending=[False, True])
     row = df_sorted.iloc[0]
-    return float(row["threshold"]), row.to_dict()
+    best_threshold = float(row["threshold"])
+    best_f = float(row["F"])
+    print(f"[YOLO] Selected best {strategy} threshold: {best_threshold:.3f} (F={best_f:.3f}) from {len(df)} candidates")
+    return best_threshold, row.to_dict()
 
 
 def find_metrics_for_threshold(metrics_df: pd.DataFrame, strategy: str, threshold: float) -> dict:
@@ -489,6 +494,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr0", type=float, default=None, help="Initial learning rate (default: Ultralytics)")
     p.add_argument("--close_mosaic", type=int, default=None, help="Disable mosaic augmentation for final N epochs (default: Ultralytics)")
     p.add_argument("--freeze", type=int, default=None, help="Freeze first N layers (default: not set)")
+    p.add_argument("--patience", type=int, default=None, help="Early stopping patience (epochs). None keeps Ultralytics default (100). Set to 0 to disable.")
     return p.parse_args()
 
 
@@ -608,6 +614,7 @@ def main():
             lr0=args.lr0,
             close_mosaic=args.close_mosaic,
             freeze=args.freeze,
+            patience=args.patience,
         )
     else:
         print("[YOLO] Skipping training (--skip_train)")
@@ -657,11 +664,13 @@ def main():
     if args.conf_sweep:
         sweep_vals = np.arange(args.conf_sweep_min, args.conf_sweep_max + 1e-9, args.conf_sweep_step)
         conf_thresholds = [float(round(v, 6)) for v in sweep_vals if v >= 0.0]
+        print(f"[YOLO] Using confidence sweep: {len(conf_thresholds)} thresholds from {min(conf_thresholds):.3f} to {max(conf_thresholds):.3f}")
     val_images_dir = ds_root / "images" / "valid"
     val_labels_dir = ds_root / "labels" / "valid"
     val_eval_dir = out_dir / "validation_eval"
     val_eval_dir.mkdir(exist_ok=True)
 
+    print(f"[YOLO] Starting validation evaluation...")
     _, _, val_metrics_df = run_yolo_predictions_and_metrics(
         model,
         val_images_dir,
@@ -687,6 +696,7 @@ def main():
     except Exception as e:
         print(f"[YOLO] Warning: Failed to re-plot TCR vs NMR for validation: {e}")
 
+    print(f"[YOLO] Starting test evaluation with validation-selected threshold {selected_thr:.3f}...")
     custom_metrics, cm_path, test_metrics_df = run_yolo_predictions_and_metrics(
         model,
         test_images_dir,
@@ -720,17 +730,33 @@ def main():
             "ACC": float(row["ACC"]),
         }
 
+    # Extract metrics for logging
+    val_metrics = _extract_metric_payload(val_row)
+    test_selected_metrics = _extract_metric_payload(selected_test_row)
+    test_best_metrics = _extract_metric_payload(test_best_row)
+
+    print(f"[YOLO] Validation metrics at selected threshold {selected_thr:.3f}:")
+    print(f"       TCR={val_metrics['TCR']:.3f}, NMR={val_metrics['NMR']:.3f}, CMR={val_metrics['CMR']:.3f}, F={val_metrics['F']:.3f}")
+    print(f"[YOLO] Test metrics at validation-selected threshold {selected_thr:.3f}:")
+    print(f"       TCR={test_selected_metrics['TCR']:.3f}, NMR={test_selected_metrics['NMR']:.3f}, CMR={test_selected_metrics['CMR']:.3f}, F={test_selected_metrics['F']:.3f}")
+    print(f"[YOLO] Test best threshold: {test_best_thr:.3f} (F={test_best_metrics['F']:.3f})")
+
     selection_summary = {
         "strategy": "top1",
         "selected_threshold": selected_thr,
-        "validation_metrics": _extract_metric_payload(val_row),
-        "test_metrics_at_selected_threshold": _extract_metric_payload(selected_test_row),
+        "validation_metrics": val_metrics,
+        "test_metrics_at_selected_threshold": test_selected_metrics,
         "test_best_threshold": test_best_thr,
-        "test_best_metrics": _extract_metric_payload(test_best_row),
+        "test_best_metrics": test_best_metrics,
     }
     selection_path = out_dir / "selected_threshold_summary.json"
     selection_path.write_text(json.dumps(selection_summary, indent=2))
     append_selection_to_config(config_path, selection_summary)
+
+    print(f"[YOLO] Evaluation complete. Results saved to:")
+    print(f"       {selection_path}")
+    print(f"       {out_dir / f'{model_name}_metrics_confidence_sweep.csv'}")
+    print(f"       {cm_path}")
 
 
 if __name__ == "__main__":

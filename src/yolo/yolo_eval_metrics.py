@@ -1,6 +1,6 @@
 """
 Refactored YOLO evaluation orchestrator.
-Runs predictions, builds ground truth, applies multiple collapse strategies (top1/presence/strict),
+Runs predictions, builds ground truth, applies Top-1 collapse strategy,
 then computes classifier-style metrics and writes comparable confusion matrices and a preds_debug.csv.
 """
 
@@ -13,7 +13,7 @@ import pandas as pd
 from ultralytics import YOLO
 
 from .evaluation.ground_truth import build_ground_truth_dataframe
-from .evaluation.strategies import predict_top1, predict_presence, predict_strict_set_match
+from .evaluation.strategies import predict_top1
 from .evaluation.metrics import compute_confusion, compute_paper_metrics, confusion_df
 from .evaluation.reporting import write_preds_debug, write_summary, plot_tcr_vs_nmr_curves, write_raw_predictions
 
@@ -89,13 +89,18 @@ def run_yolo_predictions_and_metrics(
 
     y_true = merged_df['gt_primary'].to_numpy()
 
+    print(f"[YOLO] Evaluating {len(thresholds)} confidence thresholds for {len(strategies)} strategies on {len(y_true)} samples")
+
     metrics_by_threshold: Dict[float, Dict[str, Dict[str, float]]] = {}
     metrics_rows: List[Dict[str, float]] = []
     baseline_threshold = conf_thresh if conf_thresh in thresholds else thresholds[0]
     baseline_strategy_preds: Optional[Dict[str, List[int]]] = None
     baseline_filtered_classes: Optional[List[List[int]]] = None
 
-    for thr in thresholds:
+    for i, thr in enumerate(thresholds):
+        if i % 5 == 0 or i == len(thresholds) - 1:  # Log progress every 5 thresholds or at the end
+            print(f"[YOLO] Processing confidence threshold {thr:.3f} ({i+1}/{len(thresholds)})")
+
         filtered_classes: List[List[int]] = []
         for classes, confidences in zip(merged_df['all_pred_classes'], merged_df['all_pred_confidences']):
             kept = [cls for cls, conf in zip(classes, confidences) if conf >= thr]
@@ -104,18 +109,9 @@ def run_yolo_predictions_and_metrics(
         preds_df_thr = pd.DataFrame({'all_pred_classes': filtered_classes})
 
         y_top1 = predict_top1(preds_df_thr, noise_id)
-        y_presence = predict_presence(preds_df_thr, merged_df['gt_primary'].tolist(), noise_id)
-        y_strict = predict_strict_set_match(
-            preds_df_thr,
-            merged_df['gt_set'].tolist(),
-            merged_df['gt_primary'].tolist(),
-            noise_id,
-        )
 
         strategies = {
             'top1': y_top1,
-            'presence': y_presence,
-            'strict': y_strict,
         }
 
         strategy_outputs: Dict[str, Dict[str, float]] = {}
@@ -159,13 +155,6 @@ def run_yolo_predictions_and_metrics(
         preds_df_first = pd.DataFrame({'all_pred_classes': baseline_filtered_classes})
         baseline_strategy_preds = {
             'top1': predict_top1(preds_df_first, noise_id),
-            'presence': predict_presence(preds_df_first, merged_df['gt_primary'].tolist(), noise_id),
-            'strict': predict_strict_set_match(
-                preds_df_first,
-                merged_df['gt_set'].tolist(),
-                merged_df['gt_primary'].tolist(),
-                noise_id,
-            ),
         }
         baseline_threshold = first_thr
 
@@ -182,4 +171,6 @@ def run_yolo_predictions_and_metrics(
     write_summary(output_dir, baseline_summary)
 
     baseline_metrics = baseline_summary['top1']
+    print(f"[YOLO] Evaluation complete. Baseline Top-1 metrics at conf={baseline_threshold:.3f}:")
+    print(f"       TCR={baseline_metrics['TCR']:.3f}, NMR={baseline_metrics['NMR']:.3f}, CMR={baseline_metrics['CMR']:.3f}, F={baseline_metrics['F']:.3f}")
     return baseline_metrics, baseline_metrics['confusion_path'], metrics_df
