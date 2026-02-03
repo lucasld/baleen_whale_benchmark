@@ -4,23 +4,22 @@
 
 base_args:
   # Shared defaults. 
-  # NOTE: These will be updated sequentially as we "lock in" decisions from early runs.
-  # Current placeholders assume:
-  # - Batch size to be fixed after BS series (placeholder: 32)
-  # - Rectangular processing to be confirmed by R0 (placeholder: true)
-  # - Imgsz to be selected by A-series (placeholder: 640)
-  # - Model size to be selected by B-series (placeholder: m)
+  # Decisions locked after exploratory runs (BS/R0/A/B series):
+  # - Batch size: 32 (BS pilot)
+  # - Rectangular processing: false (R0 results)
+  # - Image size: 320 (A-series results)
+  # - Model size: n (B-series results: nano generalizes best)
   batch: 32
-  imgsz: 640           # Default YOLO size, will be refined in A-series
+  imgsz: 320
   eval_conf: 0.05
   device: 0
-  model_size: m        # Baseline model, refined in B-series
+  model_size: n
   pretrained: true
-  rect: true           # To be confirmed by R0
-  epochs: 150          # Exploration baseline; B/C/D will increase this
-  augs: spec_opt       # Spectrogram-optimized; C-series will compare this
+  rect: false
+  epochs: 150
+  augs: spec_opt       # Spectrogram-optimized (mosaic=0, fliplr=0, hsv=0)
   seed: 42
-  deterministic: false
+  deterministic: true
 
 experiments:
   # -----------------------
@@ -60,7 +59,7 @@ experiments:
     args:
       model_size: m
       rect: true
-      imgsz: 256
+      imgsz: 320
       epochs: 150
       name: R0a
 
@@ -70,7 +69,7 @@ experiments:
     args:
       model_size: m
       rect: false
-      imgsz: 256
+      imgsz: 320
       epochs: 150
       name: R0b
 
@@ -79,32 +78,32 @@ experiments:
   # Find optimal resolution using rect=True and yolo12m.
   # -----------------------
   - id: A1
-    description: Image size sweep (imgsz=192, rect=True)
+    description: Image size sweep (imgsz=192, rect=False)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: m
       imgsz: 192
-      rect: true
+      rect: false
       epochs: 150
       name: A1
 
   - id: A2
-    description: Image size sweep (imgsz=320, rect=True)
+    description: Image size sweep (imgsz=320, rect=False)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: m
       imgsz: 320
-      rect: true
+      rect: false
       epochs: 150
       name: A2
 
   - id: A3
-    description: Image size sweep (imgsz=640, rect=True)
+    description: Image size sweep (imgsz=640, rect=False)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: m
       imgsz: 640
-      rect: true
+      rect: false
       epochs: 150
       name: A3
 
@@ -118,6 +117,8 @@ experiments:
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: n
+      imgsz: 320
+      rect: false
       epochs: 450
       patience: 0
       name: B1
@@ -127,6 +128,8 @@ experiments:
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: m
+      imgsz: 320
+      rect: false
       epochs: 450
       patience: 0
       name: B2
@@ -136,14 +139,16 @@ experiments:
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       model_size: x
+      imgsz: 320
+      rect: false
       epochs: 450
       patience: 0
       name: B3
 
   # -----------------------
   # 4) C-series: Augmentation Comparison
-  # NOTE: Update base_args['model_size'] and 'imgsz' from B/A results.
-  # NOTE: Set epochs ≈ ceil(1.2 * T_opt) based on B-series.
+  # Locked settings: yolo12n, imgsz=320, rect=False, epochs=150.
+  # B1 serves as the reference for 'spec_opt'.
   # -----------------------
   - id: C1
     description: Augmentation comparison (Ultralytics defaults)
@@ -151,13 +156,6 @@ experiments:
     args:
       augs: defaults
       name: C1
-
-  - id: C2
-    description: Augmentation comparison (spectrogram-optimized)
-    fold: fold_BallenyIslands2015_noise_0.25
-    args:
-      augs: spec_opt
-      name: C2
 
   - id: C3
     description: Augmentation comparison (spec-opt + NoiseMix)
@@ -195,12 +193,10 @@ experiments:
     description: Final compare (best config across all 11 folds)
     args:
       # Ensure base_args matches the final best configuration
-      deterministic: true  # Enable for reproducible final results
       name: F1
 
   - id: F2
     description: Optional second-best config (runner-up)
     args:
       # Ensure base_args matches the runner-up configuration
-      deterministic: true  # Enable for reproducible final results
       name: F2

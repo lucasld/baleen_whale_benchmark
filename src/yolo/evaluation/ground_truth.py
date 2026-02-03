@@ -79,7 +79,7 @@ def build_ground_truth_dataframe(
         classes = parse_yolo_label_file(yolo_txt)
         gt_primary = label_from_filename(str(img_path), class_to_int)
         rows.append({
-            'path': str(img_path),
+            'path': str(img_path.resolve()),
             'gt_primary': gt_primary,
             'gt_set': set(classes),
             'gt_multiset': classes,

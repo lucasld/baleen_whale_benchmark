@@ -1,0 +1,69 @@
+{
+  "run_dir": "outputs/cnn_results/251008_160341",
+  "fold": "fold_BallenyIslands2015_noise_0.25",
+  "split": "train",
+  "preset": "noise_mix",
+  "alpha": 0.3,
+  "p": 0.5,
+  "n": 8,
+  "seed": 42,
+  "noise_count": 200,
+  "samples": [
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/9684_ElephantIsland2014_B.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/9684_ElephantIsland2014_B.txt",
+      "augmented": "my_aug_tests/sample_00_augmented.png",
+      "original": "my_aug_tests/sample_00_original.png",
+      "diff": "my_aug_tests/sample_00_diff.png"
+    },
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/49043_kerguelen2015_D.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/49043_kerguelen2015_D.txt",
+      "augmented": "my_aug_tests/sample_01_augmented.png",
+      "original": "my_aug_tests/sample_01_original.png",
+      "diff": "my_aug_tests/sample_01_diff.png"
+    },
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/15739_ElephantIsland2013Aural_D.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/15739_ElephantIsland2013Aural_D.txt",
+      "augmented": "my_aug_tests/sample_02_augmented.png",
+      "original": "my_aug_tests/sample_02_original.png",
+      "diff": "my_aug_tests/sample_02_diff.png"
+    },
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/24320_kerguelen2015_20Plus.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/24320_kerguelen2015_20Plus.txt",
+      "augmented": "my_aug_tests/sample_03_augmented.png",
+      "original": "my_aug_tests/sample_03_original.png",
+      "diff": "my_aug_tests/sample_03_diff.png"
+    },
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/19688_kerguelen2014_20Plus.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/19688_kerguelen2014_20Plus.txt",
+      "augmented": "my_aug_tests/sample_04_augmented.png",
+      "original": "my_aug_tests/sample_04_original.png",
+      "diff": "my_aug_tests/sample_04_diff.png"
+    },
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/20952_kerguelen2014_20Plus.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/20952_kerguelen2014_20Plus.txt",
+      "augmented": "my_aug_tests/sample_05_augmented.png",
+      "original": "my_aug_tests/sample_05_original.png",
+      "diff": "my_aug_tests/sample_05_diff.png"
+    },
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/13432_ElephantIsland2013Aural_D.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/13432_ElephantIsland2013Aural_D.txt",
+      "augmented": "my_aug_tests/sample_06_augmented.png",
+      "original": "my_aug_tests/sample_06_original.png",
+      "diff": "my_aug_tests/sample_06_diff.png"
+    },
+    {
+      "image": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/images/train/1230_casey2014_Z.png",
+      "label": "outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset/labels/train/1230_casey2014_Z.txt",
+      "augmented": "my_aug_tests/sample_07_augmented.png",
+      "original": "my_aug_tests/sample_07_original.png",
+      "diff": "my_aug_tests/sample_07_diff.png"
+    }
+  ]
+}

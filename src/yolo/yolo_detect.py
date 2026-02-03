@@ -23,6 +23,7 @@ import os
 import shutil
 from pathlib import Path
 from typing import List, Optional
+import time
 
 import numpy as np
 import pandas as pd
@@ -464,9 +465,9 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Disable confidence sweep and evaluate only at --eval_conf.",
     )
-    p.add_argument("--conf_sweep_min", type=float, default=0.01, help="Minimum confidence for sweep (inclusive).")
-    p.add_argument("--conf_sweep_max", type=float, default=0.95, help="Maximum confidence for sweep (inclusive).")
-    p.add_argument("--conf_sweep_step", type=float, default=0.05, help="Step size for confidence sweep.")
+    p.add_argument("--conf_sweep_min", type=float, default=0.0, help="Minimum confidence for sweep (inclusive).")
+    p.add_argument("--conf_sweep_max", type=float, default=0.9, help="Maximum confidence for sweep (inclusive).")
+    p.add_argument("--conf_sweep_step", type=float, default=0.1, help="Step size for confidence sweep.")
     p.add_argument("--name", type=str, default=None, help=f"Name for the detector run under {YOLO_BASE_DIRNAME}/{PROJECT_DIRNAME}/. Default '{DEFAULT_RUN_NAME}' (overwrite).")
     p.add_argument("--overwrite", action="store_true", help=f"Overwrite existing {YOLO_BASE_DIRNAME}/{PROJECT_DIRNAME}/<name> if it exists.")
 
@@ -499,6 +500,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
+    start_time = time.time()
+    print(f"[YOLO] Starting run at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
     args = parse_args()
     if not args.conf_sweep:
         raise ValueError("Confidence sweep must remain enabled for validation-selected confidence policy.")
@@ -681,6 +685,8 @@ def main():
         noise,
         conf_thresh=args.eval_conf,
         conf_thresholds=conf_thresholds,
+        imgsz=args.imgsz,
+        device=args.device,
     )
     selected_thr, val_row = select_best_threshold(val_metrics_df, strategy="top1")
     print(f"[YOLO] Validation-selected confidence: {selected_thr:.3f}")
@@ -707,6 +713,8 @@ def main():
         noise,
         conf_thresh=args.eval_conf,
         conf_thresholds=conf_thresholds,
+        imgsz=args.imgsz,
+        device=args.device,
     )
     # Re-plot test sweep curves with selected threshold marked
     try:
@@ -752,6 +760,15 @@ def main():
     selection_path = out_dir / "selected_threshold_summary.json"
     selection_path.write_text(json.dumps(selection_summary, indent=2))
     append_selection_to_config(config_path, selection_summary)
+
+    # Report total timing
+    end_time = time.time()
+    total_time = end_time - start_time
+    hours, remainder = divmod(int(total_time), 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    print(f"[YOLO] Run completed in {hours:02d}:{minutes:02d}:{seconds:02d} (HH:MM:SS)")
+    print(f"[YOLO] Total wall-clock time: {total_time:.1f} seconds")
 
     print(f"[YOLO] Evaluation complete. Results saved to:")
     print(f"       {selection_path}")

@@ -18,20 +18,61 @@ from .evaluation.metrics import compute_confusion, compute_paper_metrics, confus
 from .evaluation.reporting import write_preds_debug, write_summary, plot_tcr_vs_nmr_curves, write_raw_predictions
 
 
-def _collect_yolo_predictions(model: YOLO, test_images_dir: Path, conf_thresh: float) -> pd.DataFrame:
-    results = model.predict(source=str(test_images_dir), conf=conf_thresh, save=False, verbose=False, workers=4, stream=True)
+def _collect_yolo_predictions(model: YOLO, test_images_dir: Path, conf_thresh: float, imgsz: int = 640, device: str = None) -> pd.DataFrame:
+    """
+    Runs inference on a directory and collects raw bounding box data.
+    Explicitly handles CPU movement and type conversion to avoid silent failures.
+    """
+    # Ensure conf is a float
+    conf_thresh = float(conf_thresh)
+    
+    print(f"[YOLO] Collecting predictions... (imgsz={imgsz}, conf={conf_thresh}, device={device})")
+
+    # Run inference
+    results = model.predict(
+        source=str(test_images_dir),
+        conf=conf_thresh,
+        imgsz=imgsz,
+        device=device,
+        save=False,
+        verbose=False,
+        workers=4,
+        stream=True
+    )
+    
     preds = []
     for result in results:
-        img_path = Path(result.path)
-        if result.boxes is not None and len(result.boxes) > 0:
-            # Sort boxes by confidence descending and keep class order accordingly
-            boxes = sorted(list(result.boxes), key=lambda b: float(b.conf.item()), reverse=True)
-            classes = [int(b.cls.item()) for b in boxes]
-            confidences = [float(b.conf.item()) for b in boxes]
-        else:
-            classes = []
-            confidences = []
-        preds.append({'path': str(img_path), 'all_pred_classes': classes, 'all_pred_confidences': confidences})
+        path = str(Path(result.path).resolve())
+        
+        # Extract boxes
+        boxes = result.boxes
+        
+        classes = []
+        confidences = []
+        
+        if boxes is not None:
+            # Check if we have any detections
+            if boxes.cls is not None and len(boxes.cls) > 0:
+                # Move to CPU, convert to numpy, then to list
+                # This chain is the safest way to extract values from Ultralytics tensors
+                try:
+                    cls_list = boxes.cls.cpu().numpy().tolist()
+                    conf_list = boxes.conf.cpu().numpy().tolist()
+                    
+                    # Ensure correct types
+                    classes = [int(c) for c in cls_list]
+                    confidences = [float(c) for c in conf_list]
+                except Exception as e:
+                    print(f"[YOLO] Warning: Error extracting boxes for {path}: {e}")
+                    classes = []
+                    confidences = []
+
+        preds.append({
+            'path': str(path), 
+            'all_pred_classes': classes, 
+            'all_pred_confidences': confidences
+        })
+        
     return pd.DataFrame(preds)
 
 
@@ -53,8 +94,10 @@ def run_yolo_predictions_and_metrics(
     noise,
     conf_thresh: float = 0.05,
     conf_thresholds: Optional[List[float]] = None,
+    imgsz: int = 640,
+    device: str = None,
 ):
-    print(f"[YOLO] Running predictions on {test_images_dir}")
+    print(f"[YOLO] Running predictions on {test_images_dir} (imgsz={imgsz})")
     test_images_dir = Path(test_images_dir)
     labels_dir = Path(labels_dir)
     output_dir = Path(output_dir)
@@ -77,7 +120,7 @@ def run_yolo_predictions_and_metrics(
     gt_df = build_ground_truth_dataframe(test_images_dir, labels_dir, class_to_int)
 
     # 2) Predictions (ordered classes + confidences per image)
-    preds_df = _collect_yolo_predictions(model, test_images_dir, collect_conf)
+    preds_df = _collect_yolo_predictions(model, test_images_dir, collect_conf, imgsz=imgsz, device=device)
 
     # 3) Merge on path and ensure alignment
     merged_df = pd.merge(gt_df, preds_df, on='path', how='left')
@@ -89,7 +132,7 @@ def run_yolo_predictions_and_metrics(
 
     y_true = merged_df['gt_primary'].to_numpy()
 
-    print(f"[YOLO] Evaluating {len(thresholds)} confidence thresholds for {len(strategies)} strategies on {len(y_true)} samples")
+    print(f"[YOLO] Evaluating {len(thresholds)} confidence thresholds for 1 strategy on {len(y_true)} samples")
 
     metrics_by_threshold: Dict[float, Dict[str, Dict[str, float]]] = {}
     metrics_rows: List[Dict[str, float]] = []

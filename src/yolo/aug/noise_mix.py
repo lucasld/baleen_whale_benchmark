@@ -25,7 +25,8 @@ class NoiseMix(A.ImageOnlyTransform):
         if not self.noise_paths:
             raise ValueError("NoiseMix requires at least one noise image path.")
         self.alpha = float(alpha)
-        super().__init__(always_apply=always_apply, p=p)
+        # `always_apply` is unused here because the base class does not support it in this Albumentations version.
+        super().__init__(p=p)
 
     def apply(self, img: np.ndarray, **params) -> np.ndarray:  # type: ignore[override]
         noise_path = random.choice(self.noise_paths)
