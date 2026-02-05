@@ -1,0 +1,31 @@
+/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/albumentations/check_version.py:147: UserWarning: Error fetching version info <urlopen error [Errno 101] Network is unreachable>
+  data = fetch_version_info()
+curl: symbol lookup error: /lib64/libk5crypto.so.3: undefined symbol: EVP_KDF_ctrl, version OPENSSL_1_1_1bcurl: symbol lookup error: /lib64/libk5crypto.so.3: undefined symbol: EVP_KDF_ctrl, version OPENSSL_1_1_1bcurl: symbol lookup error: /lib64/libk5crypto.so.3: undefined symbol: EVP_KDF_ctrl, version OPENSSL_1_1_1bTraceback (most recent call last):
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/utils/downloads.py", line 338, in safe_download
+    assert r == 0, f"Curl return value {r}"
+AssertionError: Curl return value 127
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/share/klab/danthes/lliessduques/test/baleen_whale_benchmark/test/test_custom_trainer.py", line 136, in <module>
+    main()
+  File "/share/klab/danthes/lliessduques/test/baleen_whale_benchmark/test/test_custom_trainer.py", line 132, in main
+    trainer.train()
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/engine/trainer.py", line 230, in train
+    self._do_train(world_size)
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/engine/trainer.py", line 349, in _do_train
+    self._setup_train(world_size)
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/engine/trainer.py", line 255, in _setup_train
+    ckpt = self.setup_model()
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/engine/trainer.py", line 642, in setup_model
+    weights, ckpt = attempt_load_one_weight(self.model)
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/nn/tasks.py", line 1549, in attempt_load_one_weight
+    ckpt, weight = torch_safe_load(weight)  # load ckpt
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/nn/tasks.py", line 1425, in torch_safe_load
+    file = attempt_download_asset(weight)  # search online if missing locally
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/utils/downloads.py", line 478, in attempt_download_asset
+    safe_download(url=f"{download_url}/{release}/{name}", file=file, min_bytes=1e5, **kwargs)
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/utils/downloads.py", line 379, in safe_download
+    raise ConnectionError(emojis(f"❌  Download failure for {uri}. Retry limit reached.")) from e
+ConnectionError: ❌  Download failure for https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt. Retry limit reached.

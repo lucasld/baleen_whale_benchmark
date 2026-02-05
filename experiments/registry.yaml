@@ -157,14 +157,14 @@ experiments:
       augs: defaults
       name: C1
 
-  - id: C3
+  - id: C2
     description: Augmentation comparison (spec-opt + NoiseMix)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       augs: noise_mix
       noise_mix_alpha: 0.25
       noise_mix_p: 0.5
-      name: C3
+      name: C2
 
   # -----------------------
   # 5) D-series: Transfer Learning

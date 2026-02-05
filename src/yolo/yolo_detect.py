@@ -39,6 +39,9 @@ os.environ["ULTRALYTICS_QUIET"] = "1"   # suppress batch tqdm spam; we'll print 
 from ultralytics import YOLO
 from ultralytics.utils import LOGGER
 from ultralytics.utils import DEFAULT_CFG as UL_DEFAULT_CFG
+from ultralytics.models.yolo.detect import DetectionTrainer
+from ultralytics.data.dataset import YOLODataset
+from ultralytics.cfg import get_cfg
 
 # Match logging style from yolo_test.py: concise, readable logs
 LOGGER.setLevel(logging.WARNING)
@@ -59,6 +62,43 @@ PROJECT_DIRNAME = "runs_det"
 DEFAULT_RUN_NAME = "det"
 MODEL_SIZES = ("n", "m", "x")
 NOISE_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
+
+
+class CustomDetectionTrainer(DetectionTrainer):
+    """
+    Custom Trainer that allows injecting custom Albumentations transforms (like NoiseMix)
+    into the dataset pipeline.
+    """
+    def __init__(self, overrides=None, _callbacks=None, custom_transforms=None):
+        super().__init__(overrides, _callbacks)
+        self.custom_transforms = custom_transforms
+
+    def build_dataset(self, img_path, mode="train", batch=None):
+        """
+        Override build_dataset to inject custom Albumentations transforms.
+        """
+        # Use the parent's logic to build the dataset correctly
+        dataset = super().build_dataset(img_path, mode, batch)
+
+        # If this is training and we have custom transforms, we wrap the dataset's transform pipeline
+        if mode == "train" and self.custom_transforms:
+            # In Ultralytics 8.3.x, the dataset has a .transforms attribute that is a Compose object
+            old_transforms = dataset.transforms
+
+            def wrapped_transform(labels):
+                # 1. Apply our custom NoiseMix first
+                # NoiseMix is an ImageOnlyTransform, so we pass 'image' and get 'image' back
+                for t in custom_transforms:
+                    labels["img"] = t(image=labels["img"])["image"]
+
+                # 2. Apply standard YOLO transforms (mosaic, mixup, etc.)
+                if old_transforms:
+                    return old_transforms(labels)
+                return labels
+
+            dataset.transforms = wrapped_transform
+
+        return dataset
 
 
 def find_latest_run(cnn_results_root: Path) -> Path:
@@ -313,10 +353,39 @@ def train_detector(
     ):
         _set_if_not_none(k, v)
 
+    # Branching Logic for Custom Augmentations:
+    # If we have custom Albumentations transforms (like NoiseMix), we manually instantiate our 
+    # CustomDetectionTrainer. This bypasses model.train()'s strict argument validation which 
+    # rejects the 'trainer' argument in some versions, and gives us full control.
     if augmentations:
-        train_kwargs["augmentations"] = augmentations
-
-    model.train(**train_kwargs)
+        print("[YOLO] Using CustomDetectionTrainer for custom augmentations (NoiseMix).")
+        
+        # 1. Ensure model weights are in the overrides so the trainer can load them
+        train_kwargs["model"] = weights
+        
+        # 2. Merge overrides with default config to create a valid cfg object
+        # This prevents AttributeError/TypeError during trainer initialization
+        cfg = get_cfg(cfg=UL_DEFAULT_CFG, overrides=train_kwargs)
+        
+        # 3. Instantiate custom trainer
+        trainer = CustomDetectionTrainer(overrides=cfg, custom_transforms=augmentations)
+        
+        # 4. Re-attach logger (trainer creation might have reset it)
+        # Note: trainer.model is a string path at this point, so we can't attach logger yet.
+        # The logger will be attached inside the trainer during training or we can skip it 
+        # as Ultralytics has its own logging.
+        
+        # 5. Train
+        trainer.train()
+        
+        # 7. Update the local model object with the trained weights for evaluation
+        # The trainer saves best.pt to the run directory
+        best_pt = out_project / run_name / "weights" / "best.pt"
+        if best_pt.exists():
+             model = YOLO(str(best_pt))
+    else:
+        # Standard path for "defaults" and "spec_opt"
+        model.train(**train_kwargs)
     return model  # 150 epochs, augment on-off?
     
 

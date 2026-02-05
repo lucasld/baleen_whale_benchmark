@@ -1,0 +1,18 @@
+/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/albumentations/check_version.py:147: UserWarning: Error fetching version info <urlopen error [Errno 101] Network is unreachable>
+  data = fetch_version_info()
+curl: symbol lookup error: /lib64/libk5crypto.so.3: undefined symbol: EVP_KDF_ctrl, version OPENSSL_1_1_1bcurl: symbol lookup error: /lib64/libk5crypto.so.3: undefined symbol: EVP_KDF_ctrl, version OPENSSL_1_1_1bcurl: symbol lookup error: /lib64/libk5crypto.so.3: undefined symbol: EVP_KDF_ctrl, version OPENSSL_1_1_1bTraceback (most recent call last):
+  File "/share/klab/danthes/lliessduques/test/baleen_whale_benchmark/test/test_custom_trainer.py", line 121, in <module>
+    main()
+  File "/share/klab/danthes/lliessduques/test/baleen_whale_benchmark/test/test_custom_trainer.py", line 117, in main
+    trainer.train()
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/engine/trainer.py", line 230, in train
+    self._do_train(world_size)
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/engine/trainer.py", line 349, in _do_train
+    self._setup_train(world_size)
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/engine/trainer.py", line 308, in _setup_train
+    self.train_loader = self.get_dataloader(
+  File "/home/student/l/lliessduques/.conda/envs/yoloenv/lib/python3.10/site-packages/ultralytics/models/yolo/detect/train.py", line 84, in get_dataloader
+    dataset = self.build_dataset(dataset_path, mode, batch_size)
+  File "/share/klab/danthes/lliessduques/test/baleen_whale_benchmark/test/test_custom_trainer.py", line 35, in build_dataset
+    old_transform = dataset.transform
+AttributeError: 'YOLODataset' object has no attribute 'transform'. Did you mean: 'transforms'?
