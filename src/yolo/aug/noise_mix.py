@@ -33,6 +33,13 @@ class NoiseMix(A.ImageOnlyTransform):
         noise_img = cv2.imread(noise_path, cv2.IMREAD_COLOR)
         if noise_img is None:
             raise FileNotFoundError(f"NoiseMix could not read noise image: {noise_path}")
+        
+        # Resize noise to match image
         noise_img = cv2.resize(noise_img, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_AREA)
+        
+        # Original Fading Strategy:
+        # cv2.addWeighted(src1, alpha, src2, beta, gamma)
+        # result = img * (1 - alpha) + noise * alpha
         blended = cv2.addWeighted(img, 1.0 - self.alpha, noise_img, self.alpha, 0.0)
+        
         return blended.astype(img.dtype, copy=False)

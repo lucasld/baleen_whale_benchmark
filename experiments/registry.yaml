@@ -158,31 +158,27 @@ experiments:
       name: C1
 
   - id: C2
-    description: Augmentation comparison (spec-opt + NoiseMix)
+    description: Augmentation comparison (spec-opt + NoiseMix, alpha=0.15)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
       augs: noise_mix
-      noise_mix_alpha: 0.25
+      noise_mix_alpha: 0.15
       noise_mix_p: 0.5
       name: C2
 
   # -----------------------
   # 5) D-series: Transfer Learning
-  # NOTE: Update base_args['augs'] to best from C-series.
+  # NOTE: D1 (Pretrained) is skipped because it is identical to C2. 
+  # We compare D2 (Scratch) directly against C2.
   # -----------------------
-  - id: D1
-    description: Transfer comparison (COCO-pretrained; epochs ≈ 1.2*T_opt)
-    fold: fold_BallenyIslands2015_noise_0.25
-    args:
-      pretrained: true
-      name: D1
-
   - id: D2
-    description: Transfer comparison (Scratch; epochs ≈ 1.5*T_opt)
+    description: Transfer comparison (Scratch; epochs=150 vs C2)
     fold: fold_BallenyIslands2015_noise_0.25
     args:
+      augs: noise_mix
+      noise_mix_alpha: 0.15
+      noise_mix_p: 0.5
       pretrained: false
-      # Override epochs manually here when dispatching if different from base_args
       name: D2
 
   # -----------------------

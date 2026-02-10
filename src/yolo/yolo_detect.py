@@ -88,7 +88,7 @@ class CustomDetectionTrainer(DetectionTrainer):
             def wrapped_transform(labels):
                 # 1. Apply our custom NoiseMix first
                 # NoiseMix is an ImageOnlyTransform, so we pass 'image' and get 'image' back
-                for t in custom_transforms:
+                for t in self.custom_transforms:
                     labels["img"] = t(image=labels["img"])["image"]
 
                 # 2. Apply standard YOLO transforms (mosaic, mixup, etc.)
