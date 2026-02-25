@@ -183,16 +183,24 @@ experiments:
 
   # -----------------------
   # 6) F-series: Confirmatory Runs
-  # Final 11-fold validation of best config.
+  # Final 11-fold validation of best config (C2).
   # -----------------------
   - id: F1
-    description: Final compare (best config across all 11 folds)
+    description: Final compare (C2 config across all 11 folds)
     args:
-      # Ensure base_args matches the final best configuration
+      # Explicitly pin the best single-fold config (C2):
+      # yolo12n, imgsz=320, rect=False, batch=32, epochs=150,
+      # augs=noise_mix, noise_mix_alpha=0.15, noise_mix_p=0.5, pretrained=True.
+      model_size: n
+      imgsz: 320
+      rect: false
+      batch: 32
+      epochs: 150
+      augs: noise_mix
+      noise_mix_alpha: 0.15
+      noise_mix_p: 0.5
+      pretrained: true
+      seed: 42
+      deterministic: true
+      patience: 50
       name: F1
-
-  - id: F2
-    description: Optional second-best config (runner-up)
-    args:
-      # Ensure base_args matches the runner-up configuration
-      name: F2

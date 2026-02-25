@@ -48,6 +48,35 @@ import matplotlib.pyplot as plt
 
 SUMMARY_FILENAME = "selected_threshold_summary.json"
 DEFAULT_CNN_METRICS_REL = Path("evaluation/all_metrics_by_fold_and_noise.csv")
+DEFAULT_STYLE_REL = Path("experiments/plot_style.json")
+DEFAULT_RUN_COLORS: Dict[str, str] = {
+    "CNN": "#222222",
+    "BS1": "#00441B",
+    "BS2": "#5AAE61",
+    "R0a": "#40004B",
+    "R0b": "#9970AB",
+    "A1": "#084594",
+    "A2": "#4292C6",
+    "A3": "#C6DBEF",
+    "B1": "#01665E",
+    "B2": "#5AB4AC",
+    "B3": "#C7EAE5",
+    "C1": "#8C510A",
+    "C2": "#DFC27D",
+    "D2": "#D73027",
+}
+FALLBACK_COLOR_CYCLE = [
+    "#1F77B4",
+    "#FF7F0E",
+    "#2CA02C",
+    "#D62728",
+    "#9467BD",
+    "#8C564B",
+    "#E377C2",
+    "#7F7F7F",
+    "#BCBD22",
+    "#17BECF",
+]
 
 
 @dataclass(frozen=True)
@@ -69,6 +98,64 @@ def _safe_float(x: Any) -> float:
 
 def _read_json(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text())
+
+
+def _normalize_color_hex(color: Any) -> Optional[str]:
+    if not isinstance(color, str):
+        return None
+    c = color.strip()
+    if not c:
+        return None
+    if not c.startswith("#"):
+        c = f"#{c}"
+    if len(c) != 7:
+        return None
+    try:
+        int(c[1:], 16)
+    except ValueError:
+        return None
+    return c.upper()
+
+
+def _load_style_run_colors(style_file: Optional[Path]) -> Dict[str, str]:
+    """
+    Load run color mapping from JSON style file.
+
+    Expected schema:
+    {
+      "run_colors": {"B1": "#01665E", ...}
+    }
+    """
+    run_colors = dict(DEFAULT_RUN_COLORS)
+    if style_file is None:
+        return run_colors
+    if not style_file.exists():
+        return run_colors
+    try:
+        payload = json.loads(style_file.read_text())
+    except Exception as e:
+        print(f"[compare_yolo_runs] Warning: failed to parse style file {style_file}: {e}")
+        return run_colors
+    if not isinstance(payload, dict):
+        return run_colors
+    user_map = payload.get("run_colors", {})
+    if not isinstance(user_map, dict):
+        return run_colors
+    for k, v in user_map.items():
+        if not isinstance(k, str):
+            continue
+        color = _normalize_color_hex(v)
+        if color is not None:
+            run_colors[k] = color
+    return run_colors
+
+
+def _color_for_run(run_name: str, run_colors: Dict[str, str]) -> str:
+    c = run_colors.get(run_name)
+    if c:
+        return c
+    idx = abs(hash(run_name)) % len(FALLBACK_COLOR_CYCLE)
+    return FALLBACK_COLOR_CYCLE[idx]
 
 
 def _discover_folds(run_dir: Path) -> List[Path]:
@@ -326,7 +413,7 @@ def _load_dataframe(records: List[RunRecord]) -> pd.DataFrame:
     return df
 
 
-def _plot_bar_metrics(df: pd.DataFrame, out_dir: Path, metric_prefix: str) -> None:
+def _plot_bar_metrics(df: pd.DataFrame, out_dir: Path, metric_prefix: str, run_colors: Dict[str, str]) -> None:
     metrics = ["TCR", "NMR", "CMR", "F"]
     cols = [f"{metric_prefix}_{m}" for m in metrics]
     if any(c not in df.columns for c in cols):
@@ -338,9 +425,10 @@ def _plot_bar_metrics(df: pd.DataFrame, out_dir: Path, metric_prefix: str) -> No
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 9))
     axes = axes.flatten()
+    bar_colors = [_color_for_run(rn, run_colors) for rn in labels]
     for ax, m in zip(axes, metrics):
         y = df[f"{metric_prefix}_{m}"].to_numpy(dtype=float)
-        ax.bar(x, y, color="#4C78A8", alpha=0.9)
+        ax.bar(x, y, color=bar_colors, alpha=0.9)
         ax.set_title(f"{metric_prefix}: {m}")
         ax.set_ylim(0.0, 1.0)
         ax.grid(True, axis="y", linestyle="--", alpha=0.3)
@@ -351,20 +439,22 @@ def _plot_bar_metrics(df: pd.DataFrame, out_dir: Path, metric_prefix: str) -> No
     plt.close(fig)
 
 
-def _plot_scatter_tcr_vs_nmr(df: pd.DataFrame, out_dir: Path, metric_prefix: str) -> None:
+def _plot_scatter_tcr_vs_nmr(df: pd.DataFrame, out_dir: Path, metric_prefix: str, run_colors: Dict[str, str]) -> None:
     tcr_col = f"{metric_prefix}_TCR"
     nmr_col = f"{metric_prefix}_NMR"
     if tcr_col not in df.columns or nmr_col not in df.columns:
         return
 
     fig, ax = plt.subplots(figsize=(7, 7))
-    x = df[nmr_col].to_numpy(dtype=float)
-    y = df[tcr_col].to_numpy(dtype=float)
-    ax.scatter(x, y, s=60, alpha=0.85, color="#F58518", edgecolors="black", linewidth=0.5)
     for _, r in df.iterrows():
+        run_name = str(r["run_name"])
+        c = _color_for_run(run_name, run_colors)
+        x = float(r[nmr_col])
+        y = float(r[tcr_col])
+        ax.scatter(x, y, s=60, alpha=0.9, color=c, edgecolors="black", linewidth=0.5)
         ax.annotate(
-            str(r["run_name"]),
-            (float(r[nmr_col]), float(r[tcr_col])),
+            run_name,
+            (x, y),
             textcoords="offset points",
             xytext=(6, 4),
             fontsize=8,
@@ -389,7 +479,14 @@ def _load_sweep_df(path: Path) -> pd.DataFrame:
     return df
 
 
-def _plot_overlay_f_vs_conf(records: List[RunRecord], df_runs: pd.DataFrame, out_dir: Path) -> None:
+def _plot_overlay_f_vs_conf(
+    records: List[RunRecord],
+    df_runs: pd.DataFrame,
+    out_dir: Path,
+    run_colors: Dict[str, str],
+    annotate_confidence: bool = True,
+    annotate_every: int = 1,
+) -> None:
     # map run_name -> selected_threshold for marker
     sel = {r["run_name"]: float(r["selected_threshold"]) for _, r in df_runs.iterrows() if "selected_threshold" in r}
 
@@ -405,11 +502,28 @@ def _plot_overlay_f_vs_conf(records: List[RunRecord], df_runs: pd.DataFrame, out
         sdf = sdf[sdf["strategy"] == "top1"].sort_values("threshold")
         if sdf.empty or "F" not in sdf.columns:
             continue
-        ax.plot(sdf["threshold"], sdf["F"], linewidth=1.6, label=rec.run_name)
+        color = _color_for_run(rec.run_name, run_colors)
+        ax.plot(sdf["threshold"], sdf["F"], marker="o", markersize=2.8, linewidth=1.6, label=rec.run_name, color=color)
+        if annotate_confidence:
+            step = max(1, int(annotate_every))
+            for i, (_, row) in enumerate(sdf.iterrows()):
+                if i % step != 0:
+                    continue
+                thr = float(row["threshold"])
+                f_val = float(row["F"])
+                ax.annotate(
+                    f"{thr:.2f}",
+                    (thr, f_val),
+                    textcoords="offset points",
+                    xytext=(3, 2),
+                    fontsize=6,
+                    color=color,
+                    alpha=0.9,
+                )
         if rec.run_name in sel and np.isfinite(sel[rec.run_name]):
             thr = sel[rec.run_name]
             # mark selected point if present in sweep grid; otherwise just vline
-            ax.axvline(thr, linestyle="--", alpha=0.15)
+            ax.axvline(thr, linestyle="--", alpha=0.2, color=color)
         plotted += 1
 
     if plotted == 0:
@@ -428,7 +542,14 @@ def _plot_overlay_f_vs_conf(records: List[RunRecord], df_runs: pd.DataFrame, out
     plt.close(fig)
 
 
-def _plot_overlay_tcr_vs_nmr(records: List[RunRecord], df: pd.DataFrame, out_dir: Path) -> None:
+def _plot_overlay_tcr_vs_nmr(
+    records: List[RunRecord],
+    df: pd.DataFrame,
+    out_dir: Path,
+    run_colors: Dict[str, str],
+    annotate_confidence: bool = True,
+    annotate_every: int = 1,
+) -> None:
     fig, ax = plt.subplots(figsize=(7, 7))
     plotted = 0
     for rec in records:
@@ -441,7 +562,25 @@ def _plot_overlay_tcr_vs_nmr(records: List[RunRecord], df: pd.DataFrame, out_dir
         sdf = sdf[sdf["strategy"] == "top1"].sort_values("threshold")
         if sdf.empty or "TCR" not in sdf.columns or "NMR" not in sdf.columns:
             continue
-        ax.plot(sdf["NMR"], sdf["TCR"], marker="o", markersize=2.5, linewidth=1.2, label=rec.run_name)
+        color = _color_for_run(rec.run_name, run_colors)
+        ax.plot(sdf["NMR"], sdf["TCR"], marker="o", markersize=2.5, linewidth=1.2, label=rec.run_name, color=color)
+        if annotate_confidence:
+            step = max(1, int(annotate_every))
+            for i, (_, row) in enumerate(sdf.iterrows()):
+                if i % step != 0:
+                    continue
+                nmr = float(row["NMR"])
+                tcr = float(row["TCR"])
+                thr = float(row["threshold"])
+                ax.annotate(
+                    f"{thr:.2f}",
+                    (nmr, tcr),
+                    textcoords="offset points",
+                    xytext=(3, 2),
+                    fontsize=6,
+                    color=color,
+                    alpha=0.9,
+                )
         plotted += 1
 
     # Add CNN baseline as a single scatter point
@@ -450,8 +589,18 @@ def _plot_overlay_tcr_vs_nmr(records: List[RunRecord], df: pd.DataFrame, out_dir
         cnn_tcr = cnn_row["test_selected_TCR"].iloc[0]
         cnn_nmr = cnn_row["test_selected_NMR"].iloc[0]
         if np.isfinite(cnn_tcr) and np.isfinite(cnn_nmr):
-            # Academic star marker for baseline, reduced size for professional look
-            ax.scatter(cnn_nmr, cnn_tcr, s=90, color="#E41A1C", marker="*", edgecolors="black", linewidth=0.5, label="CNN baseline", zorder=10)
+            # Academic star marker for baseline
+            ax.scatter(
+                cnn_nmr,
+                cnn_tcr,
+                s=90,
+                color=_color_for_run("CNN", run_colors),
+                marker="*",
+                edgecolors="black",
+                linewidth=0.5,
+                label="CNN baseline",
+                zorder=10,
+            )
             plotted += 1
 
     if plotted == 0:
@@ -527,6 +676,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable adding CNN baseline rows to the comparison outputs.",
     )
+    p.add_argument(
+        "--style-file",
+        type=Path,
+        default=DEFAULT_STYLE_REL,
+        help=f"JSON style file with run colors. Default: {DEFAULT_STYLE_REL}",
+    )
+    p.add_argument(
+        "--no-annotate-confidence",
+        action="store_true",
+        help="Disable confidence-threshold text annotation on overlay curve points.",
+    )
+    p.add_argument(
+        "--annotate-every",
+        type=int,
+        default=1,
+        help="Annotate every Nth point on overlays (default: 1 = every point).",
+    )
     return p.parse_args()
 
 
@@ -536,6 +702,9 @@ def main() -> None:
     runs = [r.strip() for r in args.runs.split(",") if r.strip()] or None
     include_regex = args.include_regex.strip() or None
     exclude_regex = args.exclude_regex.strip() or None
+    run_colors = _load_style_run_colors(args.style_file)
+    annotate_confidence = not args.no_annotate_confidence
+    annotate_every = max(1, int(args.annotate_every))
 
     if args.mode == "single-fold":
         if not args.fold:
@@ -592,11 +761,25 @@ def main() -> None:
     if args.mode == "single-fold":
         # de-dupe by run_name just in case
         df_one = df.drop_duplicates(subset=["run_name"]).reset_index(drop=True)
-        _plot_bar_metrics(df_one, out_dir, metric_prefix="test_selected")
-        _plot_scatter_tcr_vs_nmr(df_one, out_dir, metric_prefix="test_selected")
+        _plot_bar_metrics(df_one, out_dir, metric_prefix="test_selected", run_colors=run_colors)
+        _plot_scatter_tcr_vs_nmr(df_one, out_dir, metric_prefix="test_selected", run_colors=run_colors)
         # Confidence-sweep overlays only make sense for YOLO runs
-        _plot_overlay_f_vs_conf(records, df_one[df_one["run_name"] != "CNN"], out_dir)
-        _plot_overlay_tcr_vs_nmr(records, df_one, out_dir)
+        _plot_overlay_f_vs_conf(
+            records,
+            df_one[df_one["run_name"] != "CNN"],
+            out_dir,
+            run_colors=run_colors,
+            annotate_confidence=annotate_confidence,
+            annotate_every=annotate_every,
+        )
+        _plot_overlay_tcr_vs_nmr(
+            records,
+            df_one,
+            out_dir,
+            run_colors=run_colors,
+            annotate_confidence=annotate_confidence,
+            annotate_every=annotate_every,
+        )
         return
 
     # Across-folds: compute mean/std across folds for each run_name
@@ -612,8 +795,8 @@ def main() -> None:
             c = f"test_selected_{m}_mean"
             if c in df_mean.columns:
                 df_mean[f"test_selected_{m}"] = df_mean[c]
-        _plot_bar_metrics(df_mean, out_dir, metric_prefix="test_selected")
-        _plot_scatter_tcr_vs_nmr(df_mean, out_dir, metric_prefix="test_selected")
+        _plot_bar_metrics(df_mean, out_dir, metric_prefix="test_selected", run_colors=run_colors)
+        _plot_scatter_tcr_vs_nmr(df_mean, out_dir, metric_prefix="test_selected", run_colors=run_colors)
 
 
 if __name__ == "__main__":

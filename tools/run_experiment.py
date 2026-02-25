@@ -60,6 +60,12 @@ def main() -> None:
     parser.add_argument("--registry", type=Path, default=Path("experiments/registry.yaml"))
     parser.add_argument("--run-dir", type=str, required=True, help="CNN run directory (outputs/cnn_results/YYMMDD_...).")
     parser.add_argument("--ids", type=str, required=True, help="Comma-separated experiment IDs to run.")
+    parser.add_argument(
+        "--fold-override",
+        type=str,
+        default="",
+        help="Force a single fold for all requested IDs (useful for SLURM array dispatch).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without executing.")
     parser.add_argument("--extra", type=str, default="", help="Additional CLI args appended to every command.")
     args = parser.parse_args()
@@ -74,13 +80,20 @@ def main() -> None:
 
     base_cmd = ["python", "-u", "src/yolo/yolo_detect.py", "--run_dir", args.run_dir]
     extra_tokens = shlex.split(args.extra)
+    forced_fold = args.fold_override.strip()
+    if forced_fold:
+        forced_fold_path = Path(args.run_dir) / forced_fold
+        if not forced_fold_path.is_dir():
+            raise SystemExit(f"--fold-override '{forced_fold}' not found under {args.run_dir}")
 
     for eid in requested:
         exp = exp_index[eid]
         exp_args = merge_args(base_args, exp.get("args", {}))
         
         # Identify target folds: explicit in registry, or all found in run_dir
-        if exp.get("fold"):
+        if forced_fold:
+            target_folds = [forced_fold]
+        elif exp.get("fold"):
             target_folds = [exp["fold"]]
         else:
             # Auto-discover all folds if not specified (e.g. for confirmatory runs)
