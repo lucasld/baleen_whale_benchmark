@@ -44,6 +44,17 @@ import matplotlib
 
 matplotlib.use("Agg")  # non-interactive backend for servers/SLURM
 import matplotlib.pyplot as plt
+from yolo_aggregation import (
+    aggregate_selected_threshold,
+    aggregate_sweeps,
+    default_output_layout,
+    discover_fold_run_artifacts,
+    ensure_output_layout,
+    is_cache_valid,
+    load_selected_threshold_rows,
+    load_sweep_rows,
+    write_cache_metadata,
+)
 
 
 SUMMARY_FILENAME = "selected_threshold_summary.json"
@@ -536,6 +547,18 @@ def _plot_overlay_f_vs_conf(
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.grid(True, linestyle="--", alpha=0.3)
+    cnn_row = df_runs[df_runs["run_name"] == "CNN"]
+    if not cnn_row.empty and "test_selected_F" in cnn_row.columns:
+        cnn_f = float(cnn_row["test_selected_F"].iloc[0])
+        if np.isfinite(cnn_f):
+            ax.axhline(
+                cnn_f,
+                linestyle="--",
+                linewidth=1.5,
+                alpha=0.7,
+                color=_color_for_run("CNN", run_colors),
+                label="CNN baseline",
+            )
     ax.legend(fontsize=9, ncol=2)
     fig.tight_layout()
     fig.savefig(out_dir / "overlay_f_vs_confidence_top1.png", dpi=200)
@@ -799,7 +822,624 @@ def main() -> None:
         _plot_scatter_tcr_vs_nmr(df_mean, out_dir, metric_prefix="test_selected", run_colors=run_colors)
 
 
+def _plot_point_metrics_with_uncertainty(
+    df_agg_points: pd.DataFrame,
+    out_dir: Path,
+    run_colors: Dict[str, str],
+    band_kind: str,
+) -> None:
+    if df_agg_points.empty:
+        return
+    metric_names = ["TCR", "NMR", "CMR", "F"]
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    axes = axes.flatten()
+    x = np.arange(len(df_agg_points))
+    labels = df_agg_points["run_name"].astype(str).tolist()
+    colors = [_color_for_run(rn, run_colors) for rn in labels]
+    for ax, m in zip(axes, metric_names):
+        mean_col = f"test_selected_{m}_mean"
+        low_col = f"test_selected_{m}_{band_kind}_low"
+        high_col = f"test_selected_{m}_{band_kind}_high"
+        if mean_col not in df_agg_points.columns:
+            continue
+        y = df_agg_points[mean_col].to_numpy(dtype=float)
+        ax.bar(x, y, color=colors, alpha=0.85)
+        if low_col in df_agg_points.columns and high_col in df_agg_points.columns:
+            low = df_agg_points[low_col].to_numpy(dtype=float)
+            high = df_agg_points[high_col].to_numpy(dtype=float)
+            yerr = np.vstack([np.maximum(y - low, 0.0), np.maximum(high - y, 0.0)])
+            ax.errorbar(x, y, yerr=yerr, fmt="none", ecolor="black", capsize=3, lw=1)
+        ax.set_title(f"{m} ({band_kind})")
+        ax.set_ylim(0.0, 1.0)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.grid(True, axis="y", linestyle="--", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"bar_test_selected_metrics_{band_kind}.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_sweep_overlay_with_band(
+    df_sweep_agg: pd.DataFrame,
+    out_dir: Path,
+    run_colors: Dict[str, str],
+    metric: str,
+    band_kind: str,
+    cnn_summary_row: Optional[Dict[str, Any]] = None,
+) -> None:
+    if df_sweep_agg.empty:
+        return
+    mean_col = f"{metric}_mean"
+    low_col = f"{metric}_{band_kind}_low"
+    high_col = f"{metric}_{band_kind}_high"
+    if mean_col not in df_sweep_agg.columns:
+        return
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for run_name, sdf in df_sweep_agg.groupby("run_name"):
+        sdf = sdf.sort_values("threshold")
+        color = _color_for_run(str(run_name), run_colors)
+        x = sdf["threshold"].to_numpy(dtype=float)
+        y = sdf[mean_col].to_numpy(dtype=float)
+        ax.plot(x, y, lw=1.8, color=color, label=str(run_name))
+        if low_col in sdf.columns and high_col in sdf.columns:
+            n = int(sdf["n"].max()) if "n" in sdf.columns else 1
+            if n > 1:
+                low = sdf[low_col].to_numpy(dtype=float)
+                high = sdf[high_col].to_numpy(dtype=float)
+                ax.fill_between(x, low, high, alpha=0.18, color=color)
+    ax.set_xlabel("Confidence threshold")
+    ax.set_ylabel(metric)
+    ax.set_title(f"{metric} vs confidence ({band_kind})")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    if cnn_summary_row is not None:
+        mean_key = f"test_selected_{metric}_mean"
+        low_key = f"test_selected_{metric}_{band_kind}_low"
+        high_key = f"test_selected_{metric}_{band_kind}_high"
+        y = cnn_summary_row.get(mean_key)
+        if y is not None and np.isfinite(float(y)):
+            yv = float(y)
+            ax.axhline(
+                yv,
+                linestyle="--",
+                linewidth=1.6,
+                alpha=0.8,
+                color=_color_for_run("CNN", run_colors),
+                label="CNN baseline",
+            )
+            n = int(cnn_summary_row.get("n", 1))
+            yl = cnn_summary_row.get(low_key)
+            yh = cnn_summary_row.get(high_key)
+            if n > 1 and yl is not None and yh is not None and np.isfinite(float(yl)) and np.isfinite(float(yh)):
+                ax.fill_between(
+                    [0.0, 1.0],
+                    [float(yl), float(yl)],
+                    [float(yh), float(yh)],
+                    alpha=0.12,
+                    color=_color_for_run("CNN", run_colors),
+                )
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(fontsize=9, ncol=2)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"overlay_{metric.lower()}_vs_confidence_{band_kind}.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_operating_curve_by_fold(
+    df_sweep: pd.DataFrame,
+    out_dir: Path,
+    run_name: str,
+    cnn_summary_row: Optional[Dict[str, Any]] = None,
+) -> None:
+    if df_sweep.empty:
+        return
+    fig, ax = plt.subplots(figsize=(8, 7))
+    for fold, sdf in df_sweep.groupby("fold"):
+        sdf = sdf.sort_values("threshold")
+        if "NMR" not in sdf.columns or "TCR" not in sdf.columns:
+            continue
+        ax.plot(
+            sdf["NMR"],
+            sdf["TCR"],
+            marker="o",
+            markersize=2.6,
+            linewidth=1.3,
+            alpha=0.8,
+            label=str(fold),
+        )
+    ax.set_xlabel("NMR")
+    ax.set_ylabel("TCR")
+    ax.set_title(f"{run_name}: per-fold operating curves")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    if cnn_summary_row is not None:
+        x = cnn_summary_row.get("test_selected_NMR_mean")
+        y = cnn_summary_row.get("test_selected_TCR_mean")
+        if x is not None and y is not None and np.isfinite(float(x)) and np.isfinite(float(y)):
+            xv = float(x)
+            yv = float(y)
+            ax.scatter(
+                xv,
+                yv,
+                s=95,
+                marker="*",
+                color=_color_for_run("CNN", DEFAULT_RUN_COLORS),
+                edgecolors="black",
+                linewidth=0.5,
+                label="CNN baseline",
+                zorder=10,
+            )
+            n = int(cnn_summary_row.get("n", 1))
+            if n > 1:
+                xlo = cnn_summary_row.get("test_selected_NMR_std_low")
+                xhi = cnn_summary_row.get("test_selected_NMR_std_high")
+                ylo = cnn_summary_row.get("test_selected_TCR_std_low")
+                yhi = cnn_summary_row.get("test_selected_TCR_std_high")
+                if all(v is not None and np.isfinite(float(v)) for v in (xlo, xhi, ylo, yhi)):
+                    ax.errorbar(
+                        [xv],
+                        [yv],
+                        xerr=[[max(xv - float(xlo), 0.0)], [max(float(xhi) - xv, 0.0)]],
+                        yerr=[[max(yv - float(ylo), 0.0)], [max(float(yhi) - yv, 0.0)]],
+                        fmt="none",
+                        ecolor=_color_for_run("CNN", DEFAULT_RUN_COLORS),
+                        capsize=3,
+                        lw=1.2,
+                        alpha=0.8,
+                    )
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"{run_name}_per_fold_tcr_vs_nmr.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_f_curve_by_fold(df_sweep: pd.DataFrame, out_dir: Path, run_name: str) -> None:
+    if df_sweep.empty or "F" not in df_sweep.columns:
+        return
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for fold, sdf in df_sweep.groupby("fold"):
+        sdf = sdf.sort_values("threshold")
+        ax.plot(
+            sdf["threshold"],
+            sdf["F"],
+            marker="o",
+            markersize=2.6,
+            linewidth=1.3,
+            alpha=0.8,
+            label=str(fold),
+        )
+    ax.set_xlabel("Confidence threshold")
+    ax.set_ylabel("F")
+    ax.set_title(f"{run_name}: per-fold F vs confidence")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"{run_name}_per_fold_f_vs_confidence.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_metric_curve_by_fold(
+    df_sweep: pd.DataFrame,
+    out_dir: Path,
+    run_name: str,
+    metric: str,
+    cnn_summary_row: Optional[Dict[str, Any]] = None,
+) -> None:
+    if df_sweep.empty or metric not in df_sweep.columns:
+        return
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for fold, sdf in df_sweep.groupby("fold"):
+        sdf = sdf.sort_values("threshold")
+        ax.plot(
+            sdf["threshold"],
+            sdf[metric],
+            marker="o",
+            markersize=2.6,
+            linewidth=1.3,
+            alpha=0.8,
+            label=str(fold),
+        )
+    ax.set_xlabel("Confidence threshold")
+    ax.set_ylabel(metric)
+    ax.set_title(f"{run_name}: per-fold {metric} vs confidence")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    if cnn_summary_row is not None:
+        mean_key = f"test_selected_{metric}_mean"
+        y = cnn_summary_row.get(mean_key)
+        if y is not None and np.isfinite(float(y)):
+            yv = float(y)
+            ax.axhline(
+                yv,
+                linestyle="--",
+                linewidth=1.6,
+                alpha=0.8,
+                color=_color_for_run("CNN", DEFAULT_RUN_COLORS),
+                label="CNN baseline",
+            )
+            n = int(cnn_summary_row.get("n", 1))
+            low_key = f"test_selected_{metric}_std_low"
+            high_key = f"test_selected_{metric}_std_high"
+            yl = cnn_summary_row.get(low_key)
+            yh = cnn_summary_row.get(high_key)
+            if n > 1 and yl is not None and yh is not None and np.isfinite(float(yl)) and np.isfinite(float(yh)):
+                ax.fill_between(
+                    [0.0, 1.0],
+                    [float(yl), float(yl)],
+                    [float(yh), float(yh)],
+                    alpha=0.10,
+                    color=_color_for_run("CNN", DEFAULT_RUN_COLORS),
+                )
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    ax_metric = metric.lower()
+    fig.savefig(out_dir / f"{run_name}_per_fold_{ax_metric}_vs_confidence.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_point_metrics_by_fold(df_points: pd.DataFrame, out_dir: Path, run_name: str) -> None:
+    if df_points.empty:
+        return
+    metric_names = ["TCR", "NMR", "CMR", "F"]
+    fig, axes = plt.subplots(2, 2, figsize=(14, 9))
+    axes = axes.flatten()
+    x = np.arange(len(df_points))
+    labels = df_points["fold"].astype(str).tolist()
+    for ax, m in zip(axes, metric_names):
+        c = f"test_selected_{m}"
+        if c not in df_points.columns:
+            continue
+        y = df_points[c].to_numpy(dtype=float)
+        ax.bar(x, y, alpha=0.85)
+        ax.set_title(f"{run_name}: selected {m} by fold")
+        ax.set_ylim(0.0, 1.0)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.grid(True, axis="y", linestyle="--", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"{run_name}_selected_metrics_by_fold.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_selected_scatter_by_fold(df_points: pd.DataFrame, out_dir: Path, run_name: str) -> None:
+    tcr_col = "test_selected_TCR"
+    nmr_col = "test_selected_NMR"
+    if df_points.empty or tcr_col not in df_points.columns or nmr_col not in df_points.columns:
+        return
+    fig, ax = plt.subplots(figsize=(7, 7))
+    for _, r in df_points.iterrows():
+        x = float(r[nmr_col])
+        y = float(r[tcr_col])
+        fold = str(r.get("fold", "fold"))
+        ax.scatter(x, y, s=55, alpha=0.9, edgecolors="black", linewidth=0.5)
+        ax.annotate(fold, (x, y), textcoords="offset points", xytext=(5, 3), fontsize=8)
+    ax.set_xlabel("NMR")
+    ax.set_ylabel("TCR")
+    ax.set_title(f"{run_name}: selected-point TCR vs NMR by fold")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.grid(True, linestyle="--", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"{run_name}_selected_scatter_tcr_vs_nmr_by_fold.png", dpi=200)
+    plt.close(fig)
+
+
+def _plot_operating_curve_agg_with_band(
+    df_sweep_agg: pd.DataFrame,
+    out_dir: Path,
+    run_colors: Dict[str, str],
+    band_kind: str,
+    cnn_summary_row: Optional[Dict[str, Any]] = None,
+    annotate_every: int = 2,
+) -> None:
+    if df_sweep_agg.empty:
+        return
+    fig, ax = plt.subplots(figsize=(8, 7))
+    for run_name, sdf in df_sweep_agg.groupby("run_name"):
+        sdf = sdf.sort_values("threshold")
+        if "NMR_mean" not in sdf.columns or "TCR_mean" not in sdf.columns:
+            continue
+        color = _color_for_run(str(run_name), run_colors)
+        x = sdf["NMR_mean"].to_numpy(dtype=float)
+        y = sdf["TCR_mean"].to_numpy(dtype=float)
+        ax.plot(x, y, linewidth=1.8, marker="o", markersize=3.0, color=color, label=str(run_name))
+        step = max(1, int(annotate_every))
+        for i, (_, row) in enumerate(sdf.iterrows()):
+            if i % step != 0:
+                continue
+            nmr_val = float(row["NMR_mean"])
+            tcr_val = float(row["TCR_mean"])
+            thr = float(row["threshold"])
+            ax.annotate(
+                f"{thr:.2f}",
+                (nmr_val, tcr_val),
+                textcoords="offset points",
+                xytext=(3, 2),
+                fontsize=6,
+                color=color,
+                alpha=0.9,
+            )
+        n = int(sdf["n"].max()) if "n" in sdf.columns else 1
+        if n > 1:
+            x_low_col = f"NMR_{band_kind}_low"
+            x_high_col = f"NMR_{band_kind}_high"
+            y_low_col = f"TCR_{band_kind}_low"
+            y_high_col = f"TCR_{band_kind}_high"
+            if all(c in sdf.columns for c in (x_low_col, x_high_col, y_low_col, y_high_col)):
+                x_low = sdf[x_low_col].to_numpy(dtype=float)
+                x_high = sdf[x_high_col].to_numpy(dtype=float)
+                y_low = sdf[y_low_col].to_numpy(dtype=float)
+                y_high = sdf[y_high_col].to_numpy(dtype=float)
+                ax.fill_betweenx(y, x_low, x_high, alpha=0.06, color=color)
+                ax.fill_between(x, y_low, y_high, alpha=0.06, color=color)
+    ax.set_xlabel("NMR")
+    ax.set_ylabel("TCR")
+    ax.set_title(f"TCR vs NMR operating curves ({band_kind})")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    if cnn_summary_row is not None:
+        x = cnn_summary_row.get("test_selected_NMR_mean")
+        y = cnn_summary_row.get("test_selected_TCR_mean")
+        if x is not None and y is not None and np.isfinite(float(x)) and np.isfinite(float(y)):
+            xv = float(x)
+            yv = float(y)
+            ax.scatter(
+                xv,
+                yv,
+                s=100,
+                marker="*",
+                color=_color_for_run("CNN", run_colors),
+                edgecolors="black",
+                linewidth=0.6,
+                label="CNN baseline",
+                zorder=11,
+            )
+            n = int(cnn_summary_row.get("n", 1))
+            if n > 1:
+                x_low = cnn_summary_row.get(f"test_selected_NMR_{band_kind}_low")
+                x_high = cnn_summary_row.get(f"test_selected_NMR_{band_kind}_high")
+                y_low = cnn_summary_row.get(f"test_selected_TCR_{band_kind}_low")
+                y_high = cnn_summary_row.get(f"test_selected_TCR_{band_kind}_high")
+                if all(v is not None and np.isfinite(float(v)) for v in (x_low, x_high, y_low, y_high)):
+                    ax.errorbar(
+                        [xv],
+                        [yv],
+                        xerr=[[max(xv - float(x_low), 0.0)], [max(float(x_high) - xv, 0.0)]],
+                        yerr=[[max(yv - float(y_low), 0.0)], [max(float(y_high) - yv, 0.0)]],
+                        fmt="none",
+                        ecolor=_color_for_run("CNN", run_colors),
+                        capsize=3,
+                        lw=1.2,
+                        alpha=0.85,
+                    )
+    ax.grid(True, linestyle="--", alpha=0.3)
+    ax.legend(fontsize=9, ncol=2)
+    fig.tight_layout()
+    fig.savefig(out_dir / f"overlay_tcr_vs_nmr_{band_kind}.png", dpi=200)
+    plt.close(fig)
+
+
+def parse_args_v2() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Compare YOLO runs across experiments.")
+    p.add_argument("--run-dir", type=Path, required=True, help="Path to outputs/cnn_results/<run_id>.")
+    p.add_argument(
+        "--mode",
+        choices=["single-fold", "across-folds"],
+        default="single-fold",
+        help="single-fold compares within one fold OR one run across folds; across-folds computes per-run averages.",
+    )
+    p.add_argument("--fold", type=str, default=None, help="Fold name for explicit single-fold mode.")
+    p.add_argument("--runs", type=str, default="", help="Comma-separated run names to include.")
+    p.add_argument("--include-regex", type=str, default="", help="Include run names matching regex.")
+    p.add_argument("--exclude-regex", type=str, default="", help="Exclude run names matching regex.")
+    p.add_argument(
+        "--aggregate-folds",
+        action="store_true",
+        help="Aggregate over folds even in single-fold mode when a single run has multiple folds.",
+    )
+    p.add_argument("--out-dir", type=Path, default=None, help="Root output directory.")
+    p.add_argument("--cnn-metrics-csv", type=Path, default=None, help="Optional CNN metrics CSV path.")
+    p.add_argument("--no-cnn", action="store_true", help="Disable adding CNN baseline rows.")
+    p.add_argument(
+        "--cnn-on-curves",
+        action="store_true",
+        help="Also render CNN baseline on confidence-sweep and operating-curve plots.",
+    )
+    p.add_argument("--style-file", type=Path, default=DEFAULT_STYLE_REL, help="JSON style file with run colors.")
+    p.add_argument("--no-annotate-confidence", action="store_true", help="Disable confidence text annotations.")
+    p.add_argument("--annotate-every", type=int, default=1, help="Annotate every Nth confidence point.")
+    return p.parse_args()
+
+
+def main_v2() -> None:
+    args = parse_args_v2()
+    run_dir = args.run_dir
+    run_colors = _load_style_run_colors(args.style_file)
+    runs = [r.strip() for r in args.runs.split(",") if r.strip()]
+    if not runs:
+        raise SystemExit("--runs is required for the enhanced workflow.")
+
+    # Decide output root.
+    if args.out_dir is not None:
+        out_root = args.out_dir
+    elif args.mode == "single-fold" and args.fold:
+        out_root = run_dir / args.fold / "yolo" / "analysis" / "latest"
+    elif args.mode == "single-fold" and len(runs) == 1:
+        out_root = run_dir / "yolo" / "analysis" / runs[0] / "latest"
+    else:
+        out_root = run_dir / "yolo" / "analysis" / "latest"
+
+    layout = default_output_layout(out_root)
+    ensure_output_layout(layout)
+
+    fold_subset = [args.fold] if args.fold else None
+    artifacts = discover_fold_run_artifacts(run_dir=run_dir, run_names=runs, fold_subset=fold_subset)
+    if not artifacts:
+        raise SystemExit("No matching run artifacts found.")
+
+    source_paths = []
+    for a in artifacts:
+        if a.summary_path is not None:
+            source_paths.append(a.summary_path)
+        if a.sweep_path is not None:
+            source_paths.append(a.sweep_path)
+
+    settings = {
+        "script": "compare_yolo_runs",
+        "mode": args.mode,
+        "runs": runs,
+        "fold": args.fold or "",
+        "aggregate_folds": bool(args.aggregate_folds),
+    }
+    cache_meta = layout["cache"] / "compare_cache_meta.json"
+    points_csv = layout["tables"] / "comparison_runs.csv"
+    points_agg_csv = layout["tables"] / "summary_mean_std.csv"
+    sweep_raw_csv = layout["tables"] / "sweep_rows.csv"
+    sweep_agg_csv = layout["tables"] / "sweep_summary_mean_std.csv"
+
+    if is_cache_valid(cache_meta, settings=settings, source_paths=source_paths) and points_csv.exists():
+        df_points = pd.read_csv(points_csv)
+        df_points_agg = pd.read_csv(points_agg_csv) if points_agg_csv.exists() else pd.DataFrame()
+        df_sweep = pd.read_csv(sweep_raw_csv) if sweep_raw_csv.exists() else pd.DataFrame()
+        df_sweep_agg = pd.read_csv(sweep_agg_csv) if sweep_agg_csv.exists() else pd.DataFrame()
+    else:
+        df_points = load_selected_threshold_rows(artifacts)
+        df_sweep = load_sweep_rows(artifacts, strategy="top1")
+        df_points_agg = aggregate_selected_threshold(df_points)
+        df_sweep_agg = aggregate_sweeps(df_sweep, strategy="top1")
+        df_points.to_csv(points_csv, index=False)
+        df_points_agg.to_csv(points_agg_csv, index=False)
+        df_sweep.to_csv(sweep_raw_csv, index=False)
+        df_sweep_agg.to_csv(sweep_agg_csv, index=False)
+        write_cache_metadata(cache_meta, settings=settings, source_paths=source_paths)
+
+    # Optional CNN baseline row in aggregated point summary.
+    if not args.no_cnn:
+        cnn_df = _load_cnn_metrics_table(run_dir, args.cnn_metrics_csv)
+        if cnn_df is not None and not df_points.empty:
+            cnn_rows: List[Dict[str, Any]] = []
+            touched_folds = sorted(set(df_points["fold"].astype(str).tolist()))
+            for fold_name in touched_folds:
+                noise = _parse_noise_from_fold_name(fold_name)
+                row = _cnn_row_for_fold(run_dir, fold_name, noise, cnn_df)
+                if row is not None:
+                    row["run_name"] = "CNN"
+                    cnn_rows.append(row)
+            if cnn_rows:
+                df_cnn = pd.DataFrame(cnn_rows)
+                base = df_cnn.rename(
+                    columns={
+                        "test_selected_TCR": "test_selected_TCR",
+                        "test_selected_NMR": "test_selected_NMR",
+                        "test_selected_CMR": "test_selected_CMR",
+                        "test_selected_F": "test_selected_F",
+                        "test_selected_ACC": "test_selected_ACC",
+                    }
+                )
+                df_points = pd.concat([df_points, base], ignore_index=True, sort=False)
+                df_points_agg = aggregate_selected_threshold(df_points)
+                df_points.to_csv(points_csv, index=False)
+                df_points_agg.to_csv(points_agg_csv, index=False)
+
+    cnn_summary_row: Optional[Dict[str, Any]] = None
+    if not args.no_cnn:
+        df_cnn_agg = df_points_agg[df_points_agg["run_name"] == "CNN"] if not df_points_agg.empty else pd.DataFrame()
+        if not df_cnn_agg.empty:
+            cnn_summary_row = df_cnn_agg.iloc[0].to_dict()
+
+    # Behavior matrix:
+    # - explicit single fold: compare runs within that fold (existing style)
+    # - single run + no fold + no aggregate flag: show per-fold traces
+    # - across-fold mode OR aggregate flag: show aggregated comparisons
+    if args.mode == "single-fold" and args.fold:
+        if df_points.empty:
+            print("[compare_yolo_runs] No selected-threshold summaries found.")
+            return
+        df_one = df_points.drop_duplicates(subset=["run_name"]).reset_index(drop=True)
+        _plot_bar_metrics(df_one, layout["plots"], metric_prefix="test_selected", run_colors=run_colors)
+        _plot_scatter_tcr_vs_nmr(df_one, layout["plots"], metric_prefix="test_selected", run_colors=run_colors)
+        recs = _discover_run_records_single_fold(run_dir, args.fold, runs, None, None)
+        _plot_overlay_f_vs_conf(
+            recs,
+            df_one,
+            layout["plots"],
+            run_colors=run_colors,
+            annotate_confidence=not args.no_annotate_confidence,
+            annotate_every=max(1, int(args.annotate_every)),
+        )
+        _plot_overlay_tcr_vs_nmr(
+            recs,
+            df_one,
+            layout["plots"],
+            run_colors=run_colors,
+            annotate_confidence=not args.no_annotate_confidence,
+            annotate_every=max(1, int(args.annotate_every)),
+        )
+        return
+
+    if args.mode == "single-fold" and len(runs) == 1 and not args.aggregate_folds:
+        if df_sweep.empty:
+            print("[compare_yolo_runs] No sweep CSVs found for by-fold view.")
+            return
+        run_name = runs[0]
+        r_sweep = df_sweep[df_sweep["run_name"] == run_name].copy()
+        r_points = df_points[df_points["run_name"] == run_name].copy()
+        cnn_for_curves = cnn_summary_row if args.cnn_on_curves else None
+        _plot_point_metrics_by_fold(r_points, layout["plots"], run_name=run_name)
+        _plot_selected_scatter_by_fold(r_points, layout["plots"], run_name=run_name)
+        _plot_f_curve_by_fold(r_sweep, layout["plots"], run_name=run_name)
+        _plot_metric_curve_by_fold(r_sweep, layout["plots"], run_name=run_name, metric="TCR", cnn_summary_row=cnn_for_curves)
+        _plot_metric_curve_by_fold(r_sweep, layout["plots"], run_name=run_name, metric="NMR", cnn_summary_row=cnn_for_curves)
+        _plot_operating_curve_by_fold(r_sweep, layout["plots"], run_name=run_name, cnn_summary_row=cnn_for_curves)
+        return
+
+    # Aggregated view (across-fold mode, or single-run with --aggregate-folds)
+    if df_points_agg.empty:
+        print("[compare_yolo_runs] No aggregated point metrics available.")
+        return
+    _plot_point_metrics_with_uncertainty(df_points_agg, layout["plots"], run_colors, band_kind="std")
+    _plot_point_metrics_with_uncertainty(df_points_agg, layout["plots"], run_colors, band_kind="ci95_t")
+    _plot_scatter_tcr_vs_nmr(
+        df_points_agg.rename(
+            columns={
+                "test_selected_TCR_mean": "test_selected_TCR",
+                "test_selected_NMR_mean": "test_selected_NMR",
+            }
+        ),
+        layout["plots"],
+        metric_prefix="test_selected",
+        run_colors=run_colors,
+    )
+    cnn_for_curves = cnn_summary_row if args.cnn_on_curves else None
+    _plot_sweep_overlay_with_band(df_sweep_agg, layout["plots"], run_colors, metric="F", band_kind="std", cnn_summary_row=cnn_for_curves)
+    _plot_sweep_overlay_with_band(df_sweep_agg, layout["plots"], run_colors, metric="F", band_kind="ci95_t", cnn_summary_row=cnn_for_curves)
+    _plot_sweep_overlay_with_band(df_sweep_agg, layout["plots"], run_colors, metric="TCR", band_kind="std", cnn_summary_row=cnn_for_curves)
+    _plot_sweep_overlay_with_band(df_sweep_agg, layout["plots"], run_colors, metric="TCR", band_kind="ci95_t", cnn_summary_row=cnn_for_curves)
+    _plot_sweep_overlay_with_band(df_sweep_agg, layout["plots"], run_colors, metric="NMR", band_kind="std", cnn_summary_row=cnn_for_curves)
+    _plot_sweep_overlay_with_band(df_sweep_agg, layout["plots"], run_colors, metric="NMR", band_kind="ci95_t", cnn_summary_row=cnn_for_curves)
+    _plot_operating_curve_agg_with_band(
+        df_sweep_agg,
+        layout["plots"],
+        run_colors,
+        band_kind="std",
+        cnn_summary_row=cnn_for_curves,
+        annotate_every=2,
+    )
+    _plot_operating_curve_agg_with_band(
+        df_sweep_agg,
+        layout["plots"],
+        run_colors,
+        band_kind="ci95_t",
+        cnn_summary_row=cnn_for_curves,
+        annotate_every=2,
+    )
+
+
 if __name__ == "__main__":
-    main()
+    main_v2()
 
 
