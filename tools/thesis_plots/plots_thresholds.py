@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 
-from thesis_plots.config import MAIN_TCR_NMR_ANNOTATION_THRESHOLDS
+from thesis_plots.config import MAIN_TCR_NMR_ANNOTATION_THRESHOLDS, format_run_label
 from thesis_plots.theme import APPENDIX_PANEL, MAIN_STANDARD, style_axis
 
 
@@ -11,13 +11,22 @@ def build_final_operating_tradeoff_tcr_vs_nmr(data: dict):
     summary = data["final_selected_summary"]
     colors = data["run_colors"]
     fig, ax = plt.subplots(figsize=MAIN_STANDARD)
-    ax.plot(curve["NMR_mean"], curve["TCR_mean"], lw=2.2, color=colors.get(data["run_name"]), label=data["run_name"])
+    ax.plot(curve["NMR_mean"], curve["TCR_mean"], lw=2.2, color=colors.get(data["run_name"]), label=format_run_label(data["run_name"]))
     for _, row in curve[curve["threshold"].round(2).isin(MAIN_TCR_NMR_ANNOTATION_THRESHOLDS)].iterrows():
+        threshold = float(row["threshold"])
+        offset = {
+            0.01: (5, -13),
+            0.05: (5, -13),
+            0.10: (5, -13),
+            0.20: (5, -13),
+            0.30: (5, -13),
+            0.40: (5, -13),
+        }.get(round(threshold, 2), (4, -11))
         ax.annotate(
-            f"{float(row['threshold']):.2f}",
+            f"{threshold:.2f}",
             (float(row["NMR_mean"]), float(row["TCR_mean"])),
             textcoords="offset points",
-            xytext=(4, 3),
+            xytext=offset,
             fontsize=7,
             color=colors.get(data["run_name"]),
             alpha=0.9,
@@ -25,11 +34,11 @@ def build_final_operating_tradeoff_tcr_vs_nmr(data: dict):
     f1_row = summary[summary["run_name"] == data["run_name"]].iloc[0]
     cnn_row = summary[summary["run_name"] == "CNN"].iloc[0]
     ax.scatter(f1_row["test_selected_NMR_mean"], f1_row["test_selected_TCR_mean"], color=colors.get(data["run_name"]), s=75, edgecolor="white", linewidth=1.0, zorder=4)
-    ax.scatter(cnn_row["test_selected_NMR_mean"], cnn_row["test_selected_TCR_mean"], color=colors.get("CNN"), s=65, edgecolor="white", linewidth=1.0, zorder=4, label="CNN")
+    ax.scatter(cnn_row["test_selected_NMR_mean"], cnn_row["test_selected_TCR_mean"], color=colors.get("CNN"), s=65, edgecolor="white", linewidth=1.0, zorder=4, label=format_run_label("CNN"))
     ax.annotate(
-        "CNN fixed point",
+        "CNN baseline",
         xy=(cnn_row["test_selected_NMR_mean"], cnn_row["test_selected_TCR_mean"]),
-        xytext=(0.22, 0.76),
+        xytext=(0.05, 0.70),
         textcoords="axes fraction",
         fontsize=8,
         color=colors.get("CNN"),

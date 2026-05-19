@@ -64,11 +64,16 @@ RUN_ORDER = [
     "F1",
 ]
 
+RUN_DISPLAY_LABELS: Dict[str, str] = {
+    "CNN": "CNN baseline",
+    "F1": "Final YOLO detector",
+}
+
 EXPLORATORY_HARMONIZED_THRESHOLDS = [0.01, 0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90]
 
 APPENDIX_TCR_NMR_ANNOTATION_THRESHOLDS = [0.01, 0.05, 0.20, 0.40, 0.80]
 
-MAIN_TCR_NMR_ANNOTATION_THRESHOLDS = [0.01, 0.05, 0.20, 0.40]
+MAIN_TCR_NMR_ANNOTATION_THRESHOLDS = [0.01, 0.05, 0.10, 0.20, 0.30, 0.40]
 
 
 @dataclass(frozen=True)
@@ -96,3 +101,7 @@ def format_fold_label(fold_name: str) -> str:
     if m:
         base = f"{m.group(1).strip()} {m.group(2)}"
     return base.strip()
+
+
+def format_run_label(run_name: str) -> str:
+    return RUN_DISPLAY_LABELS.get(run_name, run_name)
