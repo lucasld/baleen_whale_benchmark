@@ -6,7 +6,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 import matplotlib
 import pandas as pd
@@ -64,6 +64,25 @@ def combo_label(class_ids: Iterable[int], label_map: Dict[int, str]) -> str:
     return " + ".join(names) if names else "Noise-only"
 
 
+def class_set(class_ids: Iterable[int]) -> Set[int]:
+    return {int(class_id) for class_id in class_ids}
+
+
+def class_set_relation(gt_classes: Set[int], pred_classes: Set[int]) -> str:
+    if pred_classes == gt_classes:
+        return "exact"
+    if not pred_classes:
+        return "no_prediction"
+    overlap = gt_classes & pred_classes
+    if not overlap:
+        return "no_overlap"
+    if pred_classes < gt_classes:
+        return "missing_only"
+    if pred_classes > gt_classes:
+        return "extra_only"
+    return "partial_overlap"
+
+
 def short_fold_label(fold_name: str) -> str:
     label = fold_name.replace("fold_", "").replace("_noise_0.25", "")
     match = re.match(r"^(.*?)(\d{4})$", label)
@@ -88,18 +107,31 @@ def prepare_prediction_columns(df: pd.DataFrame, threshold: float, noise_id: int
         ]
 
     df["pred_filt"] = df.apply(filter_predictions, axis=1)
+    df["pred_set"] = df["pred_filt"].apply(class_set)
+    df["gt_class_set"] = df["gt_set"].apply(class_set)
     df["pred_box_count_selected"] = df["pred_filt"].apply(len)
+    df["pred_class_count_selected"] = df["pred_set"].apply(len)
     df["top1_pred"] = df["pred_filt"].apply(lambda xs: xs[0] if xs else noise_id)
-    df["gt_unique_count"] = df["gt_set"].apply(lambda xs: len(set(xs)))
+    df["gt_unique_count"] = df["gt_class_set"].apply(len)
     df["gt_box_count"] = df["gt_multiset"].apply(len)
     df["is_noise_only_gt"] = df["gt_box_count"].eq(0)
-    df["is_multiclass_gt"] = df["gt_set"].apply(lambda xs: len(set(xs)) > 1)
+    df["is_multiclass_gt"] = df["gt_unique_count"].gt(1)
     df["is_multibox_gt"] = df["gt_multiset"].apply(lambda xs: len(xs) > 1)
     df["gt_primary_in_pred"] = df.apply(lambda row: int(row["gt_primary"]) in row["pred_filt"], axis=1)
     df["any_gtset_in_pred"] = df.apply(
-        lambda row: any(int(class_id) in row["pred_filt"] for class_id in row["gt_set"]),
+        lambda row: bool(row["gt_class_set"] & row["pred_set"]),
         axis=1,
     )
+    df["pred_set_relation"] = df.apply(
+        lambda row: class_set_relation(row["gt_class_set"], row["pred_set"]),
+        axis=1,
+    )
+    df["pred_set_exact"] = df["pred_set_relation"].eq("exact")
+    df["pred_set_missing_only"] = df["pred_set_relation"].eq("missing_only")
+    df["pred_set_extra_only"] = df["pred_set_relation"].eq("extra_only")
+    df["pred_set_partial_overlap"] = df["pred_set_relation"].eq("partial_overlap")
+    df["pred_set_no_overlap"] = df["pred_set_relation"].eq("no_overlap")
+    df["pred_set_no_prediction"] = df["pred_set_relation"].eq("no_prediction")
     df["top1_correct"] = df["top1_pred"].eq(df["gt_primary"])
     df["top1_wrong"] = ~df["top1_correct"]
     df["rescued_primary"] = df["top1_wrong"] & df["gt_primary_in_pred"]
@@ -126,6 +158,25 @@ def build_fold_summary(
     rescued_other_only = int(df["rescued_other_gt_only"].sum())
     rescued_any_on_multiclass = int((df["rescued_any_gtset"] & df["is_multiclass_gt"]).sum())
     wrong_no_relevant = int(df["wrong_no_relevant_prediction"].sum())
+    multiclass_df = df[df["is_multiclass_gt"]]
+    multiclass_top1_wrong_df = multiclass_df[multiclass_df["top1_wrong"]]
+    multiclass_top1_wrong = len(multiclass_top1_wrong_df)
+
+    def count_in(frame: pd.DataFrame, column: str) -> int:
+        return int(frame[column].sum()) if not frame.empty else 0
+
+    multiclass_set_exact = count_in(multiclass_df, "pred_set_exact")
+    multiclass_set_missing_only = count_in(multiclass_df, "pred_set_missing_only")
+    multiclass_set_extra_only = count_in(multiclass_df, "pred_set_extra_only")
+    multiclass_set_partial_overlap = count_in(multiclass_df, "pred_set_partial_overlap")
+    multiclass_set_no_overlap = count_in(multiclass_df, "pred_set_no_overlap")
+    multiclass_set_no_prediction = count_in(multiclass_df, "pred_set_no_prediction")
+    multiclass_top1_wrong_set_exact = count_in(multiclass_top1_wrong_df, "pred_set_exact")
+    multiclass_top1_wrong_set_missing_only = count_in(multiclass_top1_wrong_df, "pred_set_missing_only")
+    multiclass_top1_wrong_set_extra_only = count_in(multiclass_top1_wrong_df, "pred_set_extra_only")
+    multiclass_top1_wrong_set_partial_overlap = count_in(multiclass_top1_wrong_df, "pred_set_partial_overlap")
+    multiclass_top1_wrong_set_no_overlap = count_in(multiclass_top1_wrong_df, "pred_set_no_overlap")
+    multiclass_top1_wrong_set_no_prediction = count_in(multiclass_top1_wrong_df, "pred_set_no_prediction")
 
     return {
         "fold": fold,
@@ -137,6 +188,7 @@ def build_fold_summary(
         "gt_multiclass": multiclass,
         "pred_any_box_at_selected": int(df["pred_box_count_selected"].gt(0).sum()),
         "pred_multi_box_at_selected": int(df["pred_box_count_selected"].gt(1).sum()),
+        "pred_multi_class_at_selected": int(df["pred_class_count_selected"].gt(1).sum()),
         "top1_correct": int(df["top1_correct"].sum()),
         "top1_wrong": top1_wrong,
         "wrong_no_relevant_prediction": wrong_no_relevant,
@@ -144,6 +196,19 @@ def build_fold_summary(
         "rescued_any_gtset": rescued_any,
         "rescued_other_gt_only": rescued_other_only,
         "rescued_any_gtset_on_multiclass": rescued_any_on_multiclass,
+        "multiclass_top1_wrong": multiclass_top1_wrong,
+        "multiclass_set_exact": multiclass_set_exact,
+        "multiclass_set_missing_only": multiclass_set_missing_only,
+        "multiclass_set_extra_only": multiclass_set_extra_only,
+        "multiclass_set_partial_overlap": multiclass_set_partial_overlap,
+        "multiclass_set_no_overlap": multiclass_set_no_overlap,
+        "multiclass_set_no_prediction": multiclass_set_no_prediction,
+        "multiclass_top1_wrong_set_exact": multiclass_top1_wrong_set_exact,
+        "multiclass_top1_wrong_set_missing_only": multiclass_top1_wrong_set_missing_only,
+        "multiclass_top1_wrong_set_extra_only": multiclass_top1_wrong_set_extra_only,
+        "multiclass_top1_wrong_set_partial_overlap": multiclass_top1_wrong_set_partial_overlap,
+        "multiclass_top1_wrong_set_no_overlap": multiclass_top1_wrong_set_no_overlap,
+        "multiclass_top1_wrong_set_no_prediction": multiclass_top1_wrong_set_no_prediction,
         "gt_multiclass_rate": safe_rate(multiclass, n),
         "gt_multibox_rate": safe_rate(multibox, n),
         "top1_wrong_rate": safe_rate(top1_wrong, n),
@@ -154,6 +219,31 @@ def build_fold_summary(
         "rescued_other_gt_only_rate_wrong": safe_rate(rescued_other_only, top1_wrong),
         "wrong_no_relevant_prediction_rate_wrong": safe_rate(wrong_no_relevant, top1_wrong),
         "rescued_any_gtset_rate_multiclass": safe_rate(rescued_any_on_multiclass, multiclass),
+        "multiclass_top1_wrong_rate": safe_rate(multiclass_top1_wrong, multiclass),
+        "multiclass_set_exact_rate": safe_rate(multiclass_set_exact, multiclass),
+        "multiclass_set_missing_only_rate": safe_rate(multiclass_set_missing_only, multiclass),
+        "multiclass_set_extra_only_rate": safe_rate(multiclass_set_extra_only, multiclass),
+        "multiclass_set_partial_overlap_rate": safe_rate(multiclass_set_partial_overlap, multiclass),
+        "multiclass_set_no_overlap_rate": safe_rate(multiclass_set_no_overlap, multiclass),
+        "multiclass_set_no_prediction_rate": safe_rate(multiclass_set_no_prediction, multiclass),
+        "multiclass_top1_wrong_set_exact_rate": safe_rate(
+            multiclass_top1_wrong_set_exact, multiclass_top1_wrong
+        ),
+        "multiclass_top1_wrong_set_missing_only_rate": safe_rate(
+            multiclass_top1_wrong_set_missing_only, multiclass_top1_wrong
+        ),
+        "multiclass_top1_wrong_set_extra_only_rate": safe_rate(
+            multiclass_top1_wrong_set_extra_only, multiclass_top1_wrong
+        ),
+        "multiclass_top1_wrong_set_partial_overlap_rate": safe_rate(
+            multiclass_top1_wrong_set_partial_overlap, multiclass_top1_wrong
+        ),
+        "multiclass_top1_wrong_set_no_overlap_rate": safe_rate(
+            multiclass_top1_wrong_set_no_overlap, multiclass_top1_wrong
+        ),
+        "multiclass_top1_wrong_set_no_prediction_rate": safe_rate(
+            multiclass_top1_wrong_set_no_prediction, multiclass_top1_wrong
+        ),
         "selected_test_TCR": float(selected_metrics["TCR"]),
         "selected_test_NMR": float(selected_metrics["NMR"]),
         "selected_test_CMR": float(selected_metrics["CMR"]),
@@ -216,8 +306,11 @@ def build_examples_df(df: pd.DataFrame, label_map: Dict[int, str], limit: int) -
         "gt_set",
         "gt_multiset",
         "pred_filt",
+        "pred_set",
+        "pred_set_relation",
         "top1_pred",
         "pred_box_count_selected",
+        "pred_class_count_selected",
         "rescued_primary",
         "rescued_any_gtset",
         "rescued_other_gt_only",
@@ -230,11 +323,12 @@ def build_examples_df(df: pd.DataFrame, label_map: Dict[int, str], limit: int) -
     )
     examples["gt_set_label"] = examples["gt_set"].apply(lambda xs: combo_label(xs, label_map))
     examples["pred_filt_label"] = examples["pred_filt"].apply(lambda xs: combo_label(xs, label_map))
+    examples["pred_set_label"] = examples["pred_set"].apply(lambda xs: combo_label(xs, label_map))
     examples = examples.sort_values(
         ["rescued_other_gt_only", "is_multiclass_gt", "pred_box_count_selected"],
         ascending=[False, False, False],
     )
-    return examples[cols + ["top1_pred_name", "gt_set_label", "pred_filt_label"]].head(limit)
+    return examples[cols + ["top1_pred_name", "gt_set_label", "pred_filt_label", "pred_set_label"]].head(limit)
 
 
 def build_per_primary_aggregate(per_primary_df: pd.DataFrame) -> pd.DataFrame:
@@ -281,6 +375,25 @@ def build_aggregate_summary(per_fold_df: pd.DataFrame) -> Dict[str, object]:
         "rescued_any_gtset": int(per_fold_df["rescued_any_gtset"].sum()),
         "rescued_other_gt_only": int(per_fold_df["rescued_other_gt_only"].sum()),
         "rescued_any_gtset_on_multiclass": int(per_fold_df["rescued_any_gtset_on_multiclass"].sum()),
+        "multiclass_top1_wrong": int(per_fold_df["multiclass_top1_wrong"].sum()),
+        "multiclass_set_exact": int(per_fold_df["multiclass_set_exact"].sum()),
+        "multiclass_set_missing_only": int(per_fold_df["multiclass_set_missing_only"].sum()),
+        "multiclass_set_extra_only": int(per_fold_df["multiclass_set_extra_only"].sum()),
+        "multiclass_set_partial_overlap": int(per_fold_df["multiclass_set_partial_overlap"].sum()),
+        "multiclass_set_no_overlap": int(per_fold_df["multiclass_set_no_overlap"].sum()),
+        "multiclass_set_no_prediction": int(per_fold_df["multiclass_set_no_prediction"].sum()),
+        "multiclass_top1_wrong_set_exact": int(per_fold_df["multiclass_top1_wrong_set_exact"].sum()),
+        "multiclass_top1_wrong_set_missing_only": int(
+            per_fold_df["multiclass_top1_wrong_set_missing_only"].sum()
+        ),
+        "multiclass_top1_wrong_set_extra_only": int(per_fold_df["multiclass_top1_wrong_set_extra_only"].sum()),
+        "multiclass_top1_wrong_set_partial_overlap": int(
+            per_fold_df["multiclass_top1_wrong_set_partial_overlap"].sum()
+        ),
+        "multiclass_top1_wrong_set_no_overlap": int(per_fold_df["multiclass_top1_wrong_set_no_overlap"].sum()),
+        "multiclass_top1_wrong_set_no_prediction": int(
+            per_fold_df["multiclass_top1_wrong_set_no_prediction"].sum()
+        ),
     }
     summary["gt_multibox_rate"] = safe_rate(int(summary["gt_multibox"]), int(summary["n_samples"]))
     summary["gt_multiclass_rate"] = safe_rate(int(summary["gt_multiclass"]), int(summary["n_samples"]))
@@ -298,6 +411,24 @@ def build_aggregate_summary(per_fold_df: pd.DataFrame) -> Dict[str, object]:
     summary["rescued_any_gtset_rate_multiclass"] = safe_rate(
         int(summary["rescued_any_gtset_on_multiclass"]), int(summary["gt_multiclass"])
     )
+    summary["multiclass_top1_wrong_rate"] = safe_rate(
+        int(summary["multiclass_top1_wrong"]), int(summary["gt_multiclass"])
+    )
+    for relation in [
+        "exact",
+        "missing_only",
+        "extra_only",
+        "partial_overlap",
+        "no_overlap",
+        "no_prediction",
+    ]:
+        summary[f"multiclass_set_{relation}_rate"] = safe_rate(
+            int(summary[f"multiclass_set_{relation}"]), int(summary["gt_multiclass"])
+        )
+        summary[f"multiclass_top1_wrong_set_{relation}_rate"] = safe_rate(
+            int(summary[f"multiclass_top1_wrong_set_{relation}"]),
+            int(summary["multiclass_top1_wrong"]),
+        )
     return summary
 
 
@@ -364,6 +495,19 @@ def write_summary_text(
         "rescued_any_gtset",
         "rescued_other_gt_only",
         "rescued_any_gtset_on_multiclass",
+        "multiclass_top1_wrong",
+        "multiclass_set_exact",
+        "multiclass_set_missing_only",
+        "multiclass_set_extra_only",
+        "multiclass_set_partial_overlap",
+        "multiclass_set_no_overlap",
+        "multiclass_set_no_prediction",
+        "multiclass_top1_wrong_set_exact",
+        "multiclass_top1_wrong_set_missing_only",
+        "multiclass_top1_wrong_set_extra_only",
+        "multiclass_top1_wrong_set_partial_overlap",
+        "multiclass_top1_wrong_set_no_overlap",
+        "multiclass_top1_wrong_set_no_prediction",
     ]:
         lines.append(f"- {key}: {aggregate_summary[key]}")
     for key in [
@@ -377,6 +521,19 @@ def write_summary_text(
         "rescued_other_gt_only_rate_wrong",
         "wrong_no_relevant_prediction_rate_wrong",
         "rescued_any_gtset_rate_multiclass",
+        "multiclass_top1_wrong_rate",
+        "multiclass_set_exact_rate",
+        "multiclass_set_missing_only_rate",
+        "multiclass_set_extra_only_rate",
+        "multiclass_set_partial_overlap_rate",
+        "multiclass_set_no_overlap_rate",
+        "multiclass_set_no_prediction_rate",
+        "multiclass_top1_wrong_set_exact_rate",
+        "multiclass_top1_wrong_set_missing_only_rate",
+        "multiclass_top1_wrong_set_extra_only_rate",
+        "multiclass_top1_wrong_set_partial_overlap_rate",
+        "multiclass_top1_wrong_set_no_overlap_rate",
+        "multiclass_top1_wrong_set_no_prediction_rate",
     ]:
         lines.append(f"- {key}: {aggregate_summary[key]:.4f}")
 
