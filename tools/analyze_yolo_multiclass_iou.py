@@ -196,7 +196,15 @@ def collect_predictions(
     imgsz: int,
     device: str | None,
     batch: int,
+    expected_count: int | None = None,
+    progress_every: int = 250,
 ) -> dict[str, list[Detection]]:
+    total_label = str(expected_count) if expected_count is not None else "unknown"
+    print(
+        f"[multiclass-iou] predicting {total_label} images from {images_dir} "
+        f"(conf={conf:.3f}, imgsz={imgsz}, batch={batch}, device={device})",
+        flush=True,
+    )
     results = model.predict(
         source=str(images_dir),
         conf=float(conf),
@@ -209,7 +217,7 @@ def collect_predictions(
         stream=True,
     )
     out: dict[str, list[Detection]] = {}
-    for result in results:
+    for idx, result in enumerate(results, start=1):
         path = str(Path(result.path).resolve())
         detections: list[Detection] = []
         boxes = result.boxes
@@ -226,6 +234,9 @@ def collect_predictions(
                     )
                 )
         out[path] = detections
+        if progress_every > 0 and (idx % progress_every == 0 or (expected_count is not None and idx == expected_count)):
+            print(f"[multiclass-iou] predicted {idx}/{total_label} images", flush=True)
+    print(f"[multiclass-iou] prediction pass complete: {len(out)} images", flush=True)
     return out
 
 
@@ -359,6 +370,7 @@ def build_fold_frame(
     imgsz: int,
     device: str | None,
     batch: int,
+    progress_every: int,
     iou_thresholds: list[float],
     run_dir: Path,
 ) -> tuple[pd.DataFrame, dict]:
@@ -378,12 +390,22 @@ def build_fold_frame(
         raise FileNotFoundError(f"No test images found under {images_dir}")
 
     model = YOLO(str(weights))
-    predictions = collect_predictions(model, images_dir, threshold, imgsz, device, batch)
+    predictions = collect_predictions(
+        model,
+        images_dir,
+        threshold,
+        imgsz,
+        device,
+        batch,
+        expected_count=len(images),
+        progress_every=progress_every,
+    )
     cnn_sets = load_cnn_prediction_sets(run_dir, fold_dir, class_to_int)
 
     noise_id = class_to_int[NOISE_CLASS]
     rows = []
-    for image_path in images:
+    print(f"[multiclass-iou] matching boxes for {fold_dir.name}", flush=True)
+    for idx, image_path in enumerate(images, start=1):
         abs_path = str(image_path.resolve())
         gt_boxes = parse_gt_boxes(labels_dir / f"{image_path.stem}.txt")
         detections = predictions.get(abs_path, [])
@@ -416,6 +438,8 @@ def build_fold_frame(
             row[f"yolo_matched_ious_{tag}"] = matched_ious
             row[f"yolo_set_relation_{tag}"] = relation(gt_set, row[f"yolo_pred_set_{tag}"])
         rows.append(row)
+        if progress_every > 0 and (idx % progress_every == 0 or idx == len(images)):
+            print(f"[multiclass-iou] matched {idx}/{len(images)} images", flush=True)
 
     frame = pd.DataFrame(rows)
     check = {
@@ -581,6 +605,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default=None, help="Ultralytics device, e.g. 0 or cpu.")
     parser.add_argument("--batch", type=int, default=32, help="Inference batch size.")
     parser.add_argument("--iou-thresholds", default="0.25,0.5,0.7", help="Comma-separated IoU thresholds.")
+    parser.add_argument("--progress-every", type=int, default=250, help="Print progress every N images; 0 disables.")
+    parser.add_argument("--no-resume", action="store_true", help="Recompute folds even if fold_tables output already exists.")
     return parser.parse_args()
 
 
@@ -607,18 +633,42 @@ def main() -> None:
     fold_tables.mkdir(exist_ok=True)
     for fold_dir in folds:
         print(f"[multiclass-iou] {fold_dir.name}")
-        frame, check = build_fold_frame(
-            fold_dir=fold_dir,
-            run_name=args.run_name,
-            class_to_int=class_to_int,
-            image_root=args.image_root.resolve() if args.image_root else None,
-            imgsz=args.imgsz,
-            device=args.device,
-            batch=args.batch,
-            iou_thresholds=iou_thresholds,
-            run_dir=run_dir,
-        )
-        serialize_frame(frame).to_csv(fold_tables / f"{fold_dir.name}_iou_predictions.csv", index=False)
+        fold_csv = fold_tables / f"{fold_dir.name}_iou_predictions.csv"
+        if fold_csv.exists() and not args.no_resume:
+            print(f"[multiclass-iou] reusing existing fold table: {fold_csv}", flush=True)
+            cached = pd.read_csv(fold_csv)
+
+            def parse_set(value: str) -> set[int]:
+                return {int(x) for x in json.loads(value)}
+
+            for col in cached.columns:
+                if col.endswith("_set") or "_pred_set" in col:
+                    cached[col] = cached[col].apply(parse_set)
+                elif col.startswith("yolo_matched_ious_"):
+                    cached[col] = cached[col].apply(json.loads)
+            frame = cached
+            selection = read_json(fold_dir / "yolo" / "runs_det" / args.run_name / "selected_threshold_summary.json")
+            check = {
+                "fold": fold_dir.name,
+                "selected_threshold": float(frame["selected_threshold"].iloc[0]),
+                "n_images": int(len(frame)),
+                "old_test_metrics_at_selected_threshold": selection.get("test_metrics_at_selected_threshold", {}),
+                "resumed_from": str(fold_csv),
+            }
+        else:
+            frame, check = build_fold_frame(
+                fold_dir=fold_dir,
+                run_name=args.run_name,
+                class_to_int=class_to_int,
+                image_root=args.image_root.resolve() if args.image_root else None,
+                imgsz=args.imgsz,
+                device=args.device,
+                batch=args.batch,
+                progress_every=args.progress_every,
+                iou_thresholds=iou_thresholds,
+                run_dir=run_dir,
+            )
+            serialize_frame(frame).to_csv(fold_csv, index=False)
         all_frames.append(frame)
         summaries.append(
             summarize_fold(
