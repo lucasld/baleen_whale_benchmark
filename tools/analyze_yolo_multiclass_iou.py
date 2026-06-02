@@ -37,7 +37,7 @@ csv.field_size_limit(sys.maxsize)
 CALL_CLASSES = ("20Hz20Plus", "ABZ", "DDswp")
 NOISE_CLASS = "Noise"
 DEFAULT_RUN_NAME = "F1"
-DEFAULT_IOU_THRESHOLDS = (0.25, 0.5)
+DEFAULT_IOU_THRESHOLDS = (0.25, 0.5, 0.7)
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
 
@@ -512,6 +512,46 @@ def plot_set_metrics(summary_df: pd.DataFrame, out_path: Path, iou_thresholds: l
     plt.close(fig)
 
 
+def plot_set_metric_components(summary_df: pd.DataFrame, out_path: Path, iou_thresholds: list[float]) -> None:
+    series = [
+        ("CNN", "cnn", "#4D4D4D"),
+        ("YOLO class only", "yolo_class_only", "#6A51A3"),
+    ]
+    for iou_thr in iou_thresholds:
+        tag = f"iou_{iou_thr:g}".replace(".", "p")
+        series.append((f"YOLO IoU >= {iou_thr:g}", f"yolo_{tag}", "#238B45" if iou_thr >= 0.5 else "#41AB5D"))
+
+    metrics = [
+        ("set_TCR", "TCR", True),
+        ("set_NMR", "NMR", False),
+        ("set_CMR_extra", "CMR", False),
+        ("set_F", "F", True),
+        ("set_exact_match_rate", "Exact set", True),
+    ]
+    x = np.arange(len(metrics))
+    width = min(0.16, 0.75 / max(1, len(series)))
+    offsets = (np.arange(len(series)) - (len(series) - 1) / 2.0) * width
+
+    fig, ax = plt.subplots(figsize=(9.5, 4.8))
+    for offset, (label, prefix, color) in zip(offsets, series):
+        vals = []
+        for col_suffix, _, _ in metrics:
+            col = f"{prefix}_{col_suffix}"
+            vals.append(float(summary_df[col].mean()))
+        ax.bar(x + offset, vals, width=width, label=label, color=color, edgecolor="black", linewidth=0.4)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([label for _, label, _ in metrics])
+    ax.set_ylabel("Metric value")
+    ax.set_ylim(0.0, 1.0)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.35)
+    ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, 1.22), ncol=2)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=220)
+    plt.close(fig)
+
+
 def aggregate_summary(summary_df: pd.DataFrame, iou_thresholds: list[float]) -> dict:
     metric_cols = [col for col in summary_df.columns if col.endswith(("set_TCR", "set_NMR", "set_CMR_extra", "set_F"))]
     out: dict[str, object] = {
@@ -540,7 +580,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--imgsz", type=int, default=320, help="Inference image size used by the final YOLO runs.")
     parser.add_argument("--device", default=None, help="Ultralytics device, e.g. 0 or cpu.")
     parser.add_argument("--batch", type=int, default=32, help="Inference batch size.")
-    parser.add_argument("--iou-thresholds", default="0.25,0.5", help="Comma-separated IoU thresholds.")
+    parser.add_argument("--iou-thresholds", default="0.25,0.5,0.7", help="Comma-separated IoU thresholds.")
     return parser.parse_args()
 
 
@@ -603,6 +643,7 @@ def main() -> None:
     write_json(output_dir / "run_checks.json", {"folds": checks})
     write_json(output_dir / "aggregate_summary.json", aggregate_summary(summary_df, iou_thresholds))
     plot_set_metrics(summary_df, plots_dir / "set_aware_f_comparison.png", iou_thresholds)
+    plot_set_metric_components(summary_df, plots_dir / "set_aware_metric_components.png", iou_thresholds)
     print(f"[multiclass-iou] wrote {output_dir}")
 
 
