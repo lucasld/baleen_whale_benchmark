@@ -1,4 +1,0 @@
-Using dataset: outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo_dataset
-Using YAML: outputs/cnn_results/251008_160341/fold_BallenyIslands2015_noise_0.25/yolo/runs_det/C2/data_trainval.yaml
-Found 20991 noise samples.
-Starting Custom Trainer Test...
